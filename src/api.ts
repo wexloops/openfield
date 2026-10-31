@@ -189,7 +189,7 @@ export interface ScenePlan {
   status: 'running' | 'done' | 'failed';
   scene: string;
   shots?: { framing: string; move: string; action: string; seconds: number }[];
-  planner?: 'engine' | 'ollama' | 'split';
+  planner?: 'engine' | 'llm' | 'ollama' | 'split';
   notes: string[];
   seconds?: number;
   error?: string;

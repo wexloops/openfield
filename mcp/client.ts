@@ -84,7 +84,7 @@ export interface ScenePlan {
   id: string;
   status: 'running' | 'done' | 'failed';
   shots?: { framing: string; move: string; action: string; seconds: number }[];
-  planner?: 'engine' | 'ollama' | 'split';
+  planner?: 'engine' | 'llm' | 'ollama' | 'split';
   notes: string[];
   seconds?: number;
   error?: string;
