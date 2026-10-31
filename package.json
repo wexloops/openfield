@@ -52,6 +52,15 @@
     "typescript": "^5.7.2",
     "vite": "^6.4.5"
   },
+  "overrides": {
+    "glob": "14.0.3",
+    "minimatch": "11.0.3"
+  },
   "description": "OpenField: an open-source, local-first creative suite (video, image, director, loops) on ComfyUI and the Comfy SDK.",
-  "license": "MIT"
+  "license": "MIT",
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true
+  }
 }
