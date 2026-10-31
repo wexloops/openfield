@@ -143,7 +143,7 @@ export default function DirectorPage() {
           if (q.status === 'failed' || !q.shots) { toast(q.error ?? 'Planning failed', true); return; }
           setShots(q.shots.map((s) => ({ ...s, key: newKey() })));
           setCutId(null);
-          const by = q.planner === 'engine' ? 'Gemma 3 on the engine' : q.planner === 'ollama' ? 'Ollama' : 'a sentence split (no LLM answered)';
+          const by = q.planner === 'engine' ? 'Gemma 3 on the engine' : q.planner === 'llm' ? 'the OpenAI-compatible LLM' : q.planner === 'ollama' ? 'Ollama' : 'a sentence split (no LLM answered)';
           setPlanNote(`${q.shots.length} shots, planned by ${by}${q.seconds ? ` in ${Math.round(q.seconds)}s` : ''}.`);
         } catch (e) {
           setPlanning(null);

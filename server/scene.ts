@@ -3,7 +3,8 @@
  *
  *   plan     the shot list from a local LLM. First the engine itself
  *            (TextGenerateLTX2Prompt on the Gemma 3 12B encoder, see
- *            ./graphs/director.ts), then Ollama when it answers on this
+ *            ./graphs/director.ts), then an OpenAI-compatible server when
+ *            OPENFIELD_LLM_URL names one, then Ollama when it answers on this
  *            machine, then a plain sentence split so a scene always plans.
  *            Runs as a background job the client polls; a busy GPU queue can
  *            hold the engine planner for minutes.
@@ -78,7 +79,7 @@ export async function postBlockingReason(b: { era?: unknown; eraGrade?: unknown;
 
 // ---------------------------------------------------------------- plan
 
-export type Planner = 'engine' | 'ollama' | 'split';
+export type Planner = 'engine' | 'llm' | 'ollama' | 'split';
 export interface Plan {
   id: string;
   status: 'running' | 'done' | 'failed';
@@ -96,6 +97,11 @@ export const getPlan = (id: string) => plans.get(id);
 
 const OLLAMA = (process.env.OPENFIELD_OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 const OLLAMA_MODELS = (process.env.OPENFIELD_OLLAMA_MODEL || 'gpt-oss:20b,qwen3:30b,qwen3:8b,gemma3:12b').split(',').map((s) => s.trim()).filter(Boolean);
+/** An OpenAI-compatible server (llama.cpp, LM Studio, vLLM, ...): its base URL up to and including /v1. Unset = not used. */
+const LLM = (process.env.OPENFIELD_LLM_URL || '').trim().replace(/\/+$/, '');
+const LLM_MODEL = (process.env.OPENFIELD_LLM_MODEL || '').trim();
+const LLM_KEY = (process.env.OPENFIELD_LLM_KEY || '').trim();
+const LLM_TIMEOUT = 300_000;
 
 function systemPrompt(want: number): string {
   const n = want ? { min: want, max: want } : { min: SCENE_MIN_SHOTS, max: 4 };
@@ -141,6 +147,38 @@ async function planOnOllama(scene: string, want: number): Promise<string> {
   return `${d.message?.content ?? ''}`;
 }
 
+/** Ask the OpenAI-compatible server named by OPENFIELD_LLM_URL. Optional: OpenField never needs it. */
+async function planOnLlm(scene: string, want: number): Promise<string> {
+  if (!LLM) throw new Error('OPENFIELD_LLM_URL is not set');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (LLM_KEY) headers.Authorization = `Bearer ${LLM_KEY}`;
+  let model = LLM_MODEL;
+  if (!model) {
+    const r = await fetch(`${LLM}/models`, { headers, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) throw new Error(`${LLM}/models answered ${r.status}`);
+    const list = (await r.json()) as { data?: { id?: string }[] };
+    model = list.data?.find((m) => m.id)?.id ?? '';
+    if (!model) throw new Error(`${LLM}/models lists no model; set OPENFIELD_LLM_MODEL`);
+  }
+  const ask = (jsonMode: boolean) => fetch(`${LLM}/chat/completions`, {
+    method: 'POST',
+    headers,
+    signal: AbortSignal.timeout(LLM_TIMEOUT),
+    body: JSON.stringify({
+      model, stream: false, temperature: 0.4,
+      ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      messages: [{ role: 'system', content: systemPrompt(want) }, { role: 'user', content: scene }],
+    }),
+  });
+  // JSON mode where the server has it; some (LM Studio) refuse json_object with a 400, so ask again without it.
+  let r = await ask(true);
+  if (r.status === 400) r = await ask(false);
+  if (!r.ok) throw new Error(`${model} at ${LLM} answered ${r.status}`);
+  const d = (await r.json()) as { choices?: { message?: { content?: string | null } }[] };
+  // Reasoning models may put their thinking into the content; the shot list follows it.
+  return `${d.choices?.[0]?.message?.content ?? ''}`.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
 const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -169,7 +207,8 @@ export function attachCast(shots: SceneShot[], scene: string): SceneShot[] {
 }
 
 /**
- * Start planning a scene. `planner` 'auto' tries the engine, then Ollama,
+ * Start planning a scene. `planner` 'auto' tries the engine, then the
+ * OpenAI-compatible server (only when OPENFIELD_LLM_URL is set), then Ollama,
  * then the sentence split; naming one runs only that one (plus the split
  * when it fails, so the user always gets a list to edit).
  */
@@ -179,11 +218,19 @@ export function startPlan(scene: string, opts: { shots?: number; planner?: strin
   const plan: Plan = { id, status: 'running', scene, notes: [] };
   plans.set(id, plan);
   const started = Date.now();
-  const order: Planner[] = opts.planner === 'engine' ? ['engine'] : opts.planner === 'ollama' ? ['ollama'] : opts.planner === 'split' ? [] : ['engine', 'ollama'];
+  const order: Planner[] =
+    opts.planner === 'engine' ? ['engine']
+    : opts.planner === 'llm' ? ['llm']
+    : opts.planner === 'ollama' ? ['ollama']
+    : opts.planner === 'split' ? []
+    : LLM ? ['engine', 'llm', 'ollama'] : ['engine', 'ollama'];
   void (async () => {
     for (const p of order) {
       try {
-        const raw = p === 'engine' ? await planOnEngine(scene, want, opts.seed ?? Math.floor(Math.random() * 1e9)) : await planOnOllama(scene, want);
+        const raw =
+          p === 'engine' ? await planOnEngine(scene, want, opts.seed ?? Math.floor(Math.random() * 1e9))
+          : p === 'llm' ? await planOnLlm(scene, want)
+          : await planOnOllama(scene, want);
         const shots = parseShotList(raw, want || SCENE_MAX_SHOTS);
         if (shots) {
           attachCast(shots, scene);

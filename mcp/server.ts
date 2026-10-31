@@ -460,7 +460,7 @@ server.registerTool('direct_scene', {
   title: 'Director scene',
   description: [
     'Director Scene mode: one scene becomes 2-6 shots, each rendered on LTX-2.5, then cut together into one video take.',
-    'Without `shots`, a local LLM plans the shot list first (Gemma 3 12B inside the engine, then Ollama if it answers, else one shot per sentence); the plan comes back in the result.',
+    'Without `shots`, a local LLM plans the shot list first (Gemma 3 12B inside the engine, then the OpenAI-compatible server in OPENFIELD_LLM_URL if set, then Ollama if it answers, else one shot per sentence); the plan comes back in the result.',
     'Pass `shots` to use your own list (framing, move, action, seconds, optional per-shot ramp). plan_only returns the plan without rendering, so you can edit it and call again with shots.',
     'Genre, the other axes, era and ramp apply to every shot. hero_frames makes a Qwen-Image still per shot first and shoots from it (slower, steadier look).',
     'Returns the cut take id: wait_for_take on it (a 3-shot scene is several minutes on a busy GPU, longer at 720p). The shots are takes too (shot_takes once known, via get_take on the cut).',
@@ -479,7 +479,7 @@ server.registerTool('direct_scene', {
       cast: z.array(z.number().int()).optional().describe('Cast member ids for this shot (list_cast). The shot starts from a Qwen-Image-Edit hero frame composed from their pictures, then LTX shoots it. Planned shots get these from @Name mentions in the scene'),
     })).min(1).max(SCENE_MAX_SHOTS).optional().describe('Your own shot list. Omit to have the local LLM plan one.'),
     shot_count: z.number().int().min(SCENE_MIN_SHOTS).max(SCENE_MAX_SHOTS).optional().describe('How many shots the planner should write (default: it decides, 2-4)'),
-    planner: z.enum(['auto', 'engine', 'ollama', 'split']).default('auto').describe('auto = engine, then Ollama, then a sentence split'),
+    planner: z.enum(['auto', 'engine', 'llm', 'ollama', 'split']).default('auto').describe('auto = engine, then the OPENFIELD_LLM_URL server if set, then Ollama, then a sentence split'),
     plan_only: z.boolean().default(false),
     genre: axisSchema('genre'),
     camera: axisSchema('camera'),
