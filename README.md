@@ -231,6 +231,7 @@ All optional, in `.env` (see [`.env.example`](.env.example)):
 | `OPENFIELD_UI_PORT` | `3160` | Dev UI port (Vite) |
 | `OPENFIELD_DATA` | `./data` | Database and engine-input cache |
 | `OPENFIELD_RENDER_TIER` | by VRAM | Default video size: `480p`, `720p` or `1080p` (Setup > Render size overrides it) |
+| `OPENFIELD_VIDEO_DECODE` | by GPU | Video decode: `whole` clip or `chunked` (64 frames at a time; the default on AMD). Setup > Video decode overrides it |
 | `OPENFIELD_HOST` | `127.0.0.1` | Bind address. Keep it on loopback: the server has no authentication |
 | `OPENFIELD_PHONE_PORT`, `OPENFIELD_PHONE_HOST` | `3162`, auto | The phone capture listener, open only while a QR code shows |
 | `OPENFIELD_OLLAMA_URL`, `OPENFIELD_OLLAMA_MODEL` | `http://127.0.0.1:11434`, a model list | Optional Scene planner through Ollama |

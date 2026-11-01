@@ -1,5 +1,6 @@
 /** Client-side API + live socket. */
 import type { RenderTier, TierState } from './renderTier';
+import type { VideoDecode, VideoDecodeState } from './videoDecode';
 
 export interface Take {
   id: number;
@@ -57,6 +58,8 @@ export interface Status {
   comfyUrl?: string;
   /** The machine-wide video render size and where it came from. */
   renderTier?: TierState;
+  /** Whole-clip or chunked video decode (Setup > Video decode). */
+  videoDecode?: VideoDecodeState;
   /** Set when the server runs as the judge preview (server/judge.ts). */
   judge?: { cap: number; used: number; left: number; maxSeconds: number };
   active: Take[];
@@ -109,6 +112,9 @@ export const api = {
   /** Set the machine-wide render size; null goes back to the default (OPENFIELD_RENDER_TIER or the GPU). */
   setRenderTier: (renderTier: RenderTier | null) =>
     j<{ renderTier: TierState }>('/api/settings', { method: 'PUT', body: JSON.stringify({ renderTier }) }),
+  /** Set the machine-wide video decode; null goes back to the default (OPENFIELD_VIDEO_DECODE or the GPU). */
+  setVideoDecode: (videoDecode: VideoDecode | null) =>
+    j<{ videoDecode: VideoDecodeState }>('/api/settings', { method: 'PUT', body: JSON.stringify({ videoDecode }) }),
   takes: (projectId: number | null) => j<Take[]>(`/api/takes${projectId ? `?project=${projectId}` : ''}`),
   projects: () => j<Project[]>('/api/projects'),
   addProject: (name: string, folder: string) =>
