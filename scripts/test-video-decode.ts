@@ -4,8 +4,8 @@
  * Checks src/videoDecode.ts (parsing, the GPU default) and chunkVideoDecodes
  * in server/videoDecode.ts against every workflow in workflows/, which are the
  * graphs the builders write: each whole-clip VAEDecodeTiled turns into chunks,
- * larger chunks (Stage, HDR: 128) shrink to 64, a decode in chunks of 64 or
- * fewer (Cast) stays, and nothing else in a graph changes.
+ * decodes in chunks of their own (Stage, HDR, Cast) stay, and nothing else in
+ * a graph changes.
  */
 import assert from 'assert/strict';
 import { readdirSync, readFileSync } from 'fs';
@@ -30,6 +30,8 @@ function check(name: string, fn: () => void) {
 type Graph = Record<string, { class_type: string; inputs: Record<string, unknown> }>;
 const DIR = join(ROOT, 'workflows');
 const workflows = readdirSync(DIR).filter((f) => f.endsWith('.json')).map((f) => ({ file: f, graph: JSON.parse(readFileSync(join(DIR, f), 'utf8')) as Graph }));
+/** temporal_size of a whole-clip decode, as the builders write it (ComfyUI's maximum). */
+const WHOLE_CLIP = 4096;
 const decodes = (g: Graph) => Object.values(g).filter((n) => n.class_type === 'VAEDecodeTiled');
 
 console.log('\nsrc/videoDecode.ts');
@@ -54,7 +56,7 @@ check('the env value is parsed case- and space-tolerant, anything else is unset'
 console.log(`\nchunkVideoDecodes over the ${workflows.length} exported workflows`);
 
 check('the builders write whole-clip decodes (the exported workflows are unchanged)', () => {
-  const whole = workflows.filter((w) => decodes(w.graph).some((n) => (n.inputs.temporal_size as number) > DECODE_CHUNK_FRAMES));
+  const whole = workflows.filter((w) => decodes(w.graph).some((n) => n.inputs.temporal_size === WHOLE_CLIP));
   assert.ok(whole.length >= 20, `only ${whole.length} workflows decode the whole clip`);
 });
 
@@ -66,18 +68,18 @@ check('every whole-clip decode turns into chunks, and nothing else changes', () 
     const n = chunkVideoDecodes(g);
     changed += n;
     for (const [id, node] of Object.entries(before)) {
-      const wasWhole = node.class_type === 'VAEDecodeTiled' && (node.inputs.temporal_size as number) > DECODE_CHUNK_FRAMES;
+      const wasWhole = node.class_type === 'VAEDecodeTiled' && node.inputs.temporal_size === WHOLE_CLIP;
       const want = wasWhole ? { ...node.inputs, temporal_size: DECODE_CHUNK_FRAMES, temporal_overlap: DECODE_CHUNK_OVERLAP } : node.inputs;
       assert.deepEqual(g[id], { ...node, inputs: want }, `${w.file}: ${id}`);
     }
     assert.deepEqual(Object.keys(g), Object.keys(before), `${w.file}: node ids`);
-    assert.equal(n, decodes(before).filter((x) => (x.inputs.temporal_size as number) > DECODE_CHUNK_FRAMES).length, `${w.file}: count`);
+    assert.equal(n, decodes(before).filter((x) => x.inputs.temporal_size === WHOLE_CLIP).length, `${w.file}: count`);
   }
   assert.ok(changed > 0);
 });
 
-check('a decode already in chunks of 64 or fewer frames (Cast) stays as it is', () => {
-  for (const file of ['cast-video.json']) {
+check('decodes that run in chunks of their own (Stage, HDR, Cast) stay as they are', () => {
+  for (const file of ['stage-shot.json', 'finish-hdr.json', 'cast-video.json']) {
     const w = workflows.find((x) => x.file === file)!;
     const g = JSON.parse(JSON.stringify(w.graph)) as Graph;
     assert.equal(chunkVideoDecodes(g), 0, file);

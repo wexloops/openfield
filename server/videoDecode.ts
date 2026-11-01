@@ -4,8 +4,7 @@
  *
  * The graph builders always write a whole-clip decode, so exported workflows
  * stay the same everywhere. In chunks mode, engine.submit rewrites every
- * VAEDecodeTiled of a graph that takes more than 64 frames per call just
- * before the graph goes to ComfyUI.
+ * whole-clip VAEDecodeTiled of a graph just before it goes to ComfyUI.
  */
 import { config } from './config.js';
 import { meta } from './jobs.js';
@@ -48,19 +47,20 @@ export function setVideoDecode(m: VideoDecode | null) {
 
 type Node = { class_type?: unknown; inputs?: Record<string, unknown> };
 
+/** ComfyUI's largest temporal_size: the builders' way of saying "the whole clip in one go". */
+const WHOLE_CLIP = 4096;
+
 /**
- * Switch every VAEDecodeTiled in a graph that decodes more than
- * DECODE_CHUNK_FRAMES frames per call to chunks of that size, in place: the
- * whole-clip decodes, and the 128-frame chunks of Stage and HDR. A decode in
- * chunks of that size or smaller (Cast) is left as it is. Returns how many
- * nodes changed.
+ * Switch every whole-clip VAEDecodeTiled in a graph to chunks of
+ * DECODE_CHUNK_FRAMES frames, in place. Decodes that already run in chunks of
+ * their own (Stage and HDR at 128 frames, from Lightricks' graphs; Cast at 64)
+ * are left as they are. Returns how many nodes changed.
  */
 export function chunkVideoDecodes(graph: Record<string, unknown>): number {
   let n = 0;
   for (const node of Object.values(graph) as Node[]) {
     if (node?.class_type !== 'VAEDecodeTiled' || !node.inputs) continue;
-    const size = node.inputs.temporal_size;
-    if (typeof size !== 'number' || size <= DECODE_CHUNK_FRAMES) continue;
+    if (node.inputs.temporal_size !== WHOLE_CLIP) continue;
     node.inputs.temporal_size = DECODE_CHUNK_FRAMES;
     node.inputs.temporal_overlap = DECODE_CHUNK_OVERLAP;
     n++;
