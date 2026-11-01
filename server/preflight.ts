@@ -51,22 +51,17 @@ let cache: { at: number; value: BundleStatus[] } | null = null;
 const TTL_MS = 15_000;
 
 /**
- * The names a loader lists, as a lookup set. ComfyUI lists nested files with a
- * path prefix. Stock files are matched by filename only, so a stock file in a
- * subfolder still counts. A file set by OPENFIELD_LTX25_* is given with its
- * prefix, exactly as the loader lists it, so the full names are kept as well.
+ * What each folder's loader lists, as given: a file in a subfolder keeps its
+ * prefix (ltx25\x.safetensors). A file counts only under exactly the name the
+ * graph asks for, because ComfyUI refuses any other value ("Value not in
+ * list"): a stock file moved into a subfolder is missing, not present.
  */
-export function seenNames(names: string[]): Set<string> {
-  return new Set(names.flatMap((n) => [n, n.split(/[\\/]/).pop()!]));
-}
-
 async function seenByFolder(): Promise<Record<string, Set<string>>> {
   const dirs = [...Object.keys(LOADER), ...Object.keys(FOLDER)] as ModelFile['dir'][];
   const lists = await Promise.all(
     dirs.map(async (d) => {
       const folder = FOLDER[d];
-      const names = folder ? await listModelFolder(folder) : await comboOptions(...LOADER[d]!);
-      return seenNames(names);
+      return new Set(folder ? await listModelFolder(folder) : await comboOptions(...LOADER[d]!));
     })
   );
   return Object.fromEntries(dirs.map((d, i) => [d, lists[i]]));

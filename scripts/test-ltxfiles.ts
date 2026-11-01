@@ -17,7 +17,7 @@ import { ROOT } from '../server/config.js';
 import { LTX25_ENV, LTX25_STOCK, clearLtx25Overrides, ltx25Files, ltx25Overrides, type Ltx25Slot } from '../server/graphs/ltxfiles.js';
 import { buildLtx25Graph } from '../server/graphs/ltx25.js';
 import { BUNDLES, activeBundles, type Bundle } from '../server/models.js';
-import { reasonFor, seenNames, statusFor } from '../server/preflight.js';
+import { reasonFor, statusFor } from '../server/preflight.js';
 import { ENTRIES, OUT } from './export-workflows.js';
 
 let passed = 0;
@@ -143,8 +143,9 @@ try {
 console.log('\nModel manifest and preflight');
 
 const ltx = (bs: Bundle[]) => bs.find((b) => b.id === 'ltx25')!;
+// What preflight sees: each loader's list as ComfyUI returns it.
 const listing = (names: string[]) => ({
-  diffusion_models: seenNames(names), text_encoders: seenNames(names), vae: seenNames(names), latent_upscale_models: seenNames(names),
+  diffusion_models: new Set(names), text_encoders: new Set(names), vae: new Set(names), latent_upscale_models: new Set(names),
 });
 const UPSCALER = ltx(BUNDLES).files.find((f) => f.dir === 'latent_upscale_models')!.file;
 
@@ -167,6 +168,7 @@ check('with overrides the ltx25 bundle lists the configured files, marked, and k
     const f = files.find((x) => x.file === CUSTOM[s]);
     assert.ok(f, `${s} missing`);
     assert.equal(f!.override, LTX25_ENV[s]);
+    assert.equal(f!.gb, 0, `${s}: nothing to download, so no size`);
   }
   const up = files.find((f) => f.file === UPSCALER)!;
   assert.equal(up.override, undefined);
@@ -183,9 +185,20 @@ check('one override replaces one file only', () => {
   assert.ok(files.some((f) => f.file === LTX25_STOCK.transformer));
 });
 
-check('preflight: stock files (also in a subfolder) make the stock bundle ready', () => {
-  const st = statusFor(ltx(BUNDLES), listing([...STOCK_NAMES.slice(1), `sub\\${STOCK_NAMES[0]}`, UPSCALER]), new Set());
+check('preflight: the stock files under their own names make the stock bundle ready', () => {
+  const st = statusFor(ltx(BUNDLES), listing([...STOCK_NAMES, UPSCALER]), new Set());
   assert.equal(st.ready, true, st.missingFiles.map((f) => f.file).join());
+});
+
+check('preflight: a stock file in a subfolder is missing (ComfyUI would refuse the bare name)', () => {
+  const st = statusFor(ltx(BUNDLES), listing([...STOCK_NAMES.slice(1), `sub\\${STOCK_NAMES[0]}`, UPSCALER]), new Set());
+  assert.deepEqual(st.missingFiles.map((f) => f.file), [STOCK_NAMES[0]]);
+});
+
+check('preflight: a configured name without its subfolder does not match the file in it', () => {
+  const bare = 'custom-transformer-fp8.safetensors';
+  const st = statusFor(ltx(activeBundles({ [LTX25_ENV.transformer]: bare })), listing([...STOCK_NAMES.slice(1), CUSTOM.transformer, UPSCALER]), new Set());
+  assert.deepEqual(st.missingFiles.map((f) => f.file), [bare]);
 });
 
 check('preflight: configured files listed by ComfyUI make the overridden bundle ready', () => {

@@ -493,7 +493,8 @@ export function activeBundles(env: NodeJS.ProcessEnv = process.env): Bundle[] {
       ...b,
       files: b.files.map((f) => {
         const s = bySlot.get(f.file);
-        return s ? { ...f, file: set[s]!, override: LTX25_ENV[s] } : f;
+        // Never downloaded, so it adds nothing to the bundle's download size.
+        return s ? { ...f, file: set[s]!, override: LTX25_ENV[s], gb: 0 } : f;
       }),
     };
   });
