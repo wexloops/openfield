@@ -7,7 +7,7 @@
  * filename, the folder it belongs in, and where to download it.
  */
 import { comboOptions, listModelFolder, listNodeClasses } from './comfy.js';
-import { BUNDLES, bundle, bundleGb, type Bundle, type ModelFile } from './models.js';
+import { activeBundles, bundle, bundleGb, type Bundle, type ModelFile } from './models.js';
 
 /** ComfyUI folder -> the loader node whose enum lists that folder. */
 const LOADER: Partial<Record<ModelFile['dir'], [string, string]>> = {
@@ -50,20 +50,29 @@ export interface BundleStatus {
 let cache: { at: number; value: BundleStatus[] } | null = null;
 const TTL_MS = 15_000;
 
+/**
+ * The names a loader lists, as a lookup set. ComfyUI lists nested files with a
+ * path prefix. Stock files are matched by filename only, so a stock file in a
+ * subfolder still counts. A file set by OPENFIELD_LTX25_* is given with its
+ * prefix, exactly as the loader lists it, so the full names are kept as well.
+ */
+export function seenNames(names: string[]): Set<string> {
+  return new Set(names.flatMap((n) => [n, n.split(/[\\/]/).pop()!]));
+}
+
 async function seenByFolder(): Promise<Record<string, Set<string>>> {
   const dirs = [...Object.keys(LOADER), ...Object.keys(FOLDER)] as ModelFile['dir'][];
   const lists = await Promise.all(
     dirs.map(async (d) => {
       const folder = FOLDER[d];
       const names = folder ? await listModelFolder(folder) : await comboOptions(...LOADER[d]!);
-      // Filenames only — ComfyUI lists nested files with a path prefix.
-      return new Set(names.map((n) => n.split(/[\\/]/).pop()!));
+      return seenNames(names);
     })
   );
   return Object.fromEntries(dirs.map((d, i) => [d, lists[i]]));
 }
 
-function statusFor(b: Bundle, seen: Record<string, Set<string>>, nodes: Set<string>): BundleStatus {
+export function statusFor(b: Bundle, seen: Record<string, Set<string>>, nodes: Set<string>): BundleStatus {
   const missingFiles = b.files.filter((f) => !seen[f.dir]?.has(f.file));
   // An empty node-class set means we could not reach the engine at all; do not
   // then report every custom node as missing.
@@ -86,7 +95,7 @@ function statusFor(b: Bundle, seen: Record<string, Set<string>>, nodes: Set<stri
 export async function preflight(force = false): Promise<BundleStatus[]> {
   if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.value;
   const [seen, nodes] = await Promise.all([seenByFolder(), listNodeClasses()]);
-  const value = BUNDLES.map((b) => statusFor(b, seen, nodes));
+  const value = activeBundles().map((b) => statusFor(b, seen, nodes));
   cache = { at: Date.now(), value };
   return value;
 }
@@ -101,18 +110,31 @@ export function clearPreflightCache(): void {
  * when it can proceed. This is the string the user sees instead of a stack trace.
  */
 export async function blockingReason(bundleIds: string[]): Promise<string | null> {
-  const all = await preflight();
+  return reasonFor(await preflight(), bundleIds);
+}
+
+/** blockingReason over a given status list (pure, for tests). */
+export function reasonFor(all: BundleStatus[], bundleIds: string[]): string | null {
   const problems: string[] = [];
+  let fetchable = false;
+  let configured = false;
   for (const id of bundleIds) {
     const st = all.find((s) => s.id === id);
     const b = bundle(id);
     if (!st || !b || st.ready) continue;
-    const files = st.missingFiles.map((f) => `${f.file} (models/${f.dir}/)`);
+    const files = st.missingFiles.map((f) => `${f.file} (models/${f.dir}/${f.override ? `, set by ${f.override}` : ''})`);
     const packs = st.missingNodes.map((n) => `${n.pack} custom nodes`);
     problems.push(`${b.label} is missing: ${[...files, ...packs].join(', ')}`);
+    if (st.missingFiles.some((f) => f.override)) configured = true;
+    if (st.missingNodes.length || st.missingFiles.some((f) => !f.override)) fetchable = true;
   }
   if (!problems.length) return null;
-  return `${problems.join('; ')}. Run "npm run models" to fetch them, or see docs/MODELS.md.`;
+  const hints = [
+    ...(fetchable ? ['Run "npm run models" to fetch them, or see docs/MODELS.md.'] : []),
+    // A configured file is never downloaded; say what has to match instead.
+    ...(configured ? ['A file set in .env must sit in that folder and match the name ComfyUI lists for it exactly, subfolder included.'] : []),
+  ];
+  return `${problems.join('; ')}. ${hints.join(' ')}`;
 }
 
 /**

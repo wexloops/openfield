@@ -19,6 +19,8 @@
  * matches the file on disk byte for byte.
  */
 
+import { LTX25_ENV, LTX25_STOCK, ltx25Overrides, type Ltx25Slot } from './graphs/ltxfiles.js';
+
 export interface ModelFile {
   /** Filename ComfyUI must see. Referenced verbatim by a graph builder. */
   file: string;
@@ -51,6 +53,12 @@ export interface ModelFile {
   gb: number;
   /** Repo requires accepting a license on the model page before download. */
   gated?: boolean;
+  /**
+   * Set when an environment variable replaced the stock file (see
+   * server/graphs/ltxfiles.ts): the variable's name. `file` is then the
+   * configured name, which the installer never downloads.
+   */
+  override?: string;
 }
 
 export interface Bundle {
@@ -77,14 +85,14 @@ export const BUNDLES: Bundle[] = [
     purpose: 'Video + Loop modes on the LTX-2.5 engine. The recommended starting point: it is the only video engine here whose license permits commercial delivery, and its first/last-frame mode closes seamless loops without a post dissolve.',
     license: 'LTX-2.x Community License Agreement (Aug 11, 2026). Free for any use, commercial included, if you (and your affiliates) earn under $10M a year; at $10M or more a paid Commercial Use Agreement is required for anything beyond non-commercial use. Acceptable-use restrictions apply. The Gemma 4 based text encoder ships in this repo under the same license.',
     files: [
-      { file: 'ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors', dir: 'diffusion_models',
-        ...HF('Lightricks/LTX-2.5', 'diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors', 21.5, true) },
-      { file: 'gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors', dir: 'text_encoders',
-        ...HF('Lightricks/LTX-2.5', 'text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors', 15.4, true) },
-      { file: 'ltx-2.5-video-vae-bf16.safetensors', dir: 'vae',
-        ...HF('Lightricks/LTX-2.5', 'vae/ltx-2.5-video-vae-bf16.safetensors', 1.5, true) },
-      { file: 'ltx-2.5-audio-vae-bf16.safetensors', dir: 'vae',
-        ...HF('Lightricks/LTX-2.5', 'vae/ltx-2.5-audio-vae-bf16.safetensors', 0.4, true) },
+      { file: LTX25_STOCK.transformer, dir: 'diffusion_models',
+        ...HF('Lightricks/LTX-2.5', `diffusion_models/${LTX25_STOCK.transformer}`, 21.5, true) },
+      { file: LTX25_STOCK.textEncoder, dir: 'text_encoders',
+        ...HF('Lightricks/LTX-2.5', `text_encoders/${LTX25_STOCK.textEncoder}`, 15.4, true) },
+      { file: LTX25_STOCK.videoVae, dir: 'vae',
+        ...HF('Lightricks/LTX-2.5', `vae/${LTX25_STOCK.videoVae}`, 1.5, true) },
+      { file: LTX25_STOCK.audioVae, dir: 'vae',
+        ...HF('Lightricks/LTX-2.5', `vae/${LTX25_STOCK.audioVae}`, 0.4, true) },
       { file: 'ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors', dir: 'latent_upscale_models',
         ...HF('Lightricks/LTX-2.5', 'latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors', 1.0, true) },
     ],
@@ -465,6 +473,31 @@ export const bundle = (id: string): Bundle | undefined => BUNDLES.find((b) => b.
 
 export const bundleGb = (b: Bundle): number =>
   Math.round(b.files.reduce((n, f) => n + f.gb, 0) * 10) / 10;
+
+/**
+ * The bundles as this install runs them: a stock LTX-2.5 file that an
+ * OPENFIELD_LTX25_* variable replaces is swapped for the configured file, so
+ * preflight checks for the file the graphs actually load and the installer
+ * does not fetch the stock one in its place. Without overrides this returns
+ * BUNDLES unchanged. BUNDLES itself always holds the stock files: docs/MODELS.md
+ * is generated from it.
+ */
+export function activeBundles(env: NodeJS.ProcessEnv = process.env): Bundle[] {
+  const set = ltx25Overrides(env);
+  const slots = Object.keys(set) as Ltx25Slot[];
+  if (!slots.length) return BUNDLES;
+  const bySlot = new Map(slots.map((s) => [LTX25_STOCK[s], s]));
+  return BUNDLES.map((b) => {
+    if (!b.files.some((f) => bySlot.has(f.file))) return b;
+    return {
+      ...b,
+      files: b.files.map((f) => {
+        const s = bySlot.get(f.file);
+        return s ? { ...f, file: set[s]!, override: LTX25_ENV[s] } : f;
+      }),
+    };
+  });
+}
 
 /**
  * Which bundles a given render needs. Keys match what the UI sends to

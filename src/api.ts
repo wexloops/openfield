@@ -27,7 +27,11 @@ export type CastSource = { token: string } | { takeId: number };
 
 export interface Preamble { id: number; name: string; text: string; sort: number }
 
-export interface ModelFileRef { file: string; dir: string; repo: string; path: string; gb: number; gated?: boolean }
+export interface ModelFileRef {
+  file: string; dir: string; repo: string; path: string; gb: number; gated?: boolean;
+  /** The OPENFIELD_LTX25_* variable that set this file in place of the stock one. */
+  override?: string;
+}
 
 export interface BundleStatus {
   id: string;

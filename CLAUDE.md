@@ -114,7 +114,9 @@ than downloading silently past them.
 
 - **OpenField resolves models by exact filename.** A file with the right content
   and a slightly different name is a missing file. The names in
-  `server/models.ts` are what the graph builders ask ComfyUI for.
+  `server/models.ts` are what the graph builders ask ComfyUI for, except for the
+  four LTX-2.5 files when `OPENFIELD_LTX25_*` is set in `.env`
+  (`server/graphs/ltxfiles.ts`): then the configured names count.
 - **`COMFY_MODELS_DIR` is not necessarily where ComfyUI reads from.** ComfyUI's
   `extra_model_paths.yaml` frequently redirects model folders to another drive.
   The installer therefore asks the running engine what it can see and only falls

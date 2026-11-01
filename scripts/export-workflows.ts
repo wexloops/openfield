@@ -12,9 +12,12 @@
  * own in the loader node, then queue. Each file loads by dropping it onto the
  * ComfyUI canvas. Re-run after changing a builder; the output is deterministic.
  * workflows/README.md is generated alongside, from the graphs themselves.
+ * The files always name the stock LTX-2.5 weights, even when this machine's
+ * .env sets OPENFIELD_LTX25_* (server/graphs/ltxfiles.ts).
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { fileURLToPath } from 'url';
 import { ROOT } from '../server/config.js';
 import { buildLtx25Graph, snapFrames } from '../server/graphs/ltx25.js';
 import { applyPost, buildCutGraph, buildPlannerGraph, PLANNER_SYSTEM } from '../server/graphs/director.js';
@@ -38,8 +41,9 @@ import { buildTrellisGraph } from '../server/graphs/trellis.js';
 import { planBridge, planRegen } from '../server/seam.js';
 import { buildCutoutStillGraph, buildCutoutVideoGraph } from '../server/graphs/cutout.js';
 import { buildRestyleGraph, buildSwapGraph } from '../server/graphs/restyle.js';
+import { clearLtx25Overrides } from '../server/graphs/ltxfiles.js';
 
-const OUT = join(ROOT, 'workflows');
+export const OUT = join(ROOT, 'workflows');
 const SEED = 42;
 const STAGE_CLAY = stageSize('16:9', '720p');
 const STAGE_LOOK = lookSize('16:9');
@@ -80,7 +84,7 @@ const CAST_NOTES = 'a woman in her forties with a black bob with one silver stre
 const STAGE = 'A woman in a long dark coat in a rain-soaked night alley between a wooden crate and a concrete pillar, neon on wet stone.';
 const MIRROR = 'A knight in dented steel armor in a torch-lit stone hall, same movement and timing.';
 
-interface Entry {
+export interface Entry {
   file: string;
   app: string;
   build: () => Record<string, unknown>;
@@ -174,7 +178,7 @@ function cutoutEntries(): Entry[] {
   ];
 }
 
-const ENTRIES: Entry[] = [
+export const ENTRIES: Entry[] = [
   // ---- Video (LTX-2.5) ----
   {
     file: 'video-t2v', app: 'Video',
@@ -536,28 +540,38 @@ For the exact graph behind one of your renders, use **Download workflow** or
 
 `;
 
-mkdirSync(OUT, { recursive: true });
-// Drop stale exports so a renamed or removed variant does not linger.
-for (const f of readdirSync(OUT)) if (f.endsWith('.json')) rmSync(join(OUT, f));
+function writeAll(): void {
+  mkdirSync(OUT, { recursive: true });
+  // Drop stale exports so a renamed or removed variant does not linger.
+  for (const f of readdirSync(OUT)) if (f.endsWith('.json')) rmSync(join(OUT, f));
 
-const rows: string[] = [];
-for (const e of ENTRIES) {
-  const graph = e.build();
-  const leftover = JSON.stringify(graph).match(/asset:[0-9a-f-]{36}/i);
-  if (leftover) throw new Error(`${e.file}: unresolved asset token ${leftover[0]}`);
-  writeFileSync(join(OUT, `${e.file}.json`), JSON.stringify(graph, null, 2) + '\n');
-  console.log(`workflows/${e.file}.json  (${Object.keys(graph).length} nodes)  ${e.app}`);
-  const inv = inventory(graph);
-  const code = (xs: string[]) => (xs.length ? xs.map((x) => `\`${x}\``).join('<br>') : 'none');
-  rows.push(
-    `| [\`${e.file}.json\`](${e.file}.json) | ${e.app} | ${code(inv.models)} | ${inv.packs.join('<br>') || 'none (core only)'} | ${code(inv.inputs)} |`,
+  const rows: string[] = [];
+  for (const e of ENTRIES) {
+    const graph = e.build();
+    const leftover = JSON.stringify(graph).match(/asset:[0-9a-f-]{36}/i);
+    if (leftover) throw new Error(`${e.file}: unresolved asset token ${leftover[0]}`);
+    writeFileSync(join(OUT, `${e.file}.json`), JSON.stringify(graph, null, 2) + '\n');
+    console.log(`workflows/${e.file}.json  (${Object.keys(graph).length} nodes)  ${e.app}`);
+    const inv = inventory(graph);
+    const code = (xs: string[]) => (xs.length ? xs.map((x) => `\`${x}\``).join('<br>') : 'none');
+    rows.push(
+      `| [\`${e.file}.json\`](${e.file}.json) | ${e.app} | ${code(inv.models)} | ${inv.packs.join('<br>') || 'none (core only)'} | ${code(inv.inputs)} |`,
+    );
+  }
+  writeFileSync(
+    join(OUT, 'README.md'),
+    README_HEAD +
+      '| File | Used by | Models | Custom nodes | Inputs |\n| --- | --- | --- | --- | --- |\n' +
+      rows.join('\n') +
+      '\n',
   );
+  console.log(`${ENTRIES.length} workflows written`);
 }
-writeFileSync(
-  join(OUT, 'README.md'),
-  README_HEAD +
-    '| File | Used by | Models | Custom nodes | Inputs |\n| --- | --- | --- | --- | --- |\n' +
-    rows.join('\n') +
-    '\n',
-);
-console.log(`${ENTRIES.length} workflows written`);
+
+// Run as `npm run workflows`; scripts/test-ltxfiles.ts imports ENTRIES without writing anything.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // These files are the shared examples in the repo: always the stock LTX-2.5
+  // weights, whatever this machine's .env sets (server/graphs/ltxfiles.ts).
+  clearLtx25Overrides();
+  writeAll();
+}
