@@ -480,6 +480,7 @@ server.registerTool('direct_scene', {
     })).min(1).max(SCENE_MAX_SHOTS).optional().describe('Your own shot list. Omit to have the local LLM plan one.'),
     shot_count: z.number().int().min(SCENE_MIN_SHOTS).max(SCENE_MAX_SHOTS).optional().describe('How many shots the planner should write (default: it decides, 2-4)'),
     planner: z.enum(['auto', 'engine', 'llm', 'ollama', 'split']).default('auto').describe('auto = engine, then the OPENFIELD_LLM_URL server if set, then Ollama, then a sentence split'),
+    think: z.boolean().default(false).describe('Let a thinking planner model reason before it writes the list: slower, steadier on scenes with many beats. Off is quicker for drafts. OPENFIELD_LLM_REASONING on the server overrides it.'),
     plan_only: z.boolean().default(false),
     genre: axisSchema('genre'),
     camera: axisSchema('camera'),
@@ -503,7 +504,7 @@ server.registerTool('direct_scene', {
   let shots = a.shots;
   let planned: Record<string, unknown> | undefined;
   if (!shots) {
-    let p = await api.directorPlan({ scene: a.scene, shots: a.shot_count, planner: a.planner === 'auto' ? undefined : a.planner });
+    let p = await api.directorPlan({ scene: a.scene, shots: a.shot_count, planner: a.planner === 'auto' ? undefined : a.planner, think: a.think });
     const deadline = Date.now() + 25 * 60_000;
     const started = Date.now();
     let tick = 0;

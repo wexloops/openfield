@@ -20,6 +20,7 @@
     "mcp": "tsx mcp/server.ts",
     "mcp:smoke": "tsx mcp/smoke.ts",
     "mcp:check": "tsx mcp/bodies.check.ts",
+    "shotlist:check": "tsx scripts/check-shotlist.ts",
     "workflows": "tsx scripts/export-workflows.ts"
   },
   "dependencies": {

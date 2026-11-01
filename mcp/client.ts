@@ -72,7 +72,7 @@ export const api = {
   loras: () => j<{ loras: { name: string; family: string | null; trigger?: string }[] }>('/api/loras').then((d) => d.loras),
   createCast: (m: { name: string; kind: string; notes: string; refs: { token: string }[] }) => post<CastMember>('/api/cast', m),
   updateCast: (id: number, patch: Record<string, unknown>) => j<CastMember>(`/api/cast/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
-  directorPlan: (body: { scene: string; shots?: number; planner?: string }) => post<ScenePlan>('/api/director/plan', body),
+  directorPlan: (body: { scene: string; shots?: number; planner?: string; think?: boolean }) => post<ScenePlan>('/api/director/plan', body),
   directorPlanStatus: (id: string) => j<ScenePlan>(`/api/director/plan/${id}`),
   directorScene: (body: Record<string, unknown>) => post<{ cutId: number; take: Take }>('/api/director/scene', body),
   seam: (id: number) => j<Record<string, any>>(`/api/takes/${id}/seam`),

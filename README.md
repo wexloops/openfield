@@ -234,6 +234,7 @@ All optional, in `.env` (see [`.env.example`](.env.example)):
 | `OPENFIELD_HOST` | `127.0.0.1` | Bind address. Keep it on loopback: the server has no authentication |
 | `OPENFIELD_PHONE_PORT`, `OPENFIELD_PHONE_HOST` | `3162`, auto | The phone capture listener, open only while a QR code shows |
 | `OPENFIELD_LLM_URL`, `OPENFIELD_LLM_MODEL`, `OPENFIELD_LLM_KEY` | unset, the first listed model, none | Optional Scene planner through an OpenAI-compatible server (base URL up to `/v1`) |
+| `OPENFIELD_LLM_REASONING` | unset | Overrides the Director's "Think first" switch: sent as `reasoning_effort` on every plan (`none` = no reasoning) |
 | `OPENFIELD_OLLAMA_URL`, `OPENFIELD_OLLAMA_MODEL` | `http://127.0.0.1:11434`, a model list | Optional Scene planner through Ollama |
 | `FFMPEG_BIN`, `FFPROBE_BIN` | `ffmpeg`, `ffprobe` | Paths to ffmpeg and ffprobe |
 | `WHISPER_BIN` | | openai-whisper CLI: video takes with speech get a transcript |

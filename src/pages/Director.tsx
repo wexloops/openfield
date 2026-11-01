@@ -6,7 +6,7 @@
  * local LLM and shoots it into one cut.
  */
 import { useEffect, useRef, useState } from 'react';
-import { api, inputUrl, mediaUrl, posterUrl, takeAsInput, uploadFile, type Take } from '../api';
+import { api, inputUrl, mediaUrl, posterUrl, takeAsInput, uploadFile, type ScenePlan, type Take } from '../api';
 import { usePageDrop } from '../drop';
 import {
   ASPECTS, DIRECTOR_AXES as AXES, DIRECTOR_MOVES as CAMERA_MOVES, ERA_DECADES, ERA_MAX, ERA_MIN, IMAGE_MODELS, SCENE_FRAMINGS, SCENE_MAX_SHOTS,
@@ -53,6 +53,10 @@ export default function DirectorPage() {
   const [heroFrames, setHeroFrames] = useState(false);
   const [planning, setPlanning] = useState<string | null>(null);
   const [planNote, setPlanNote] = useState('');
+  const [planLive, setPlanLive] = useState<PlanLive | null>(null);
+  const [think, setThink] = useState(false);
+  /** OPENFIELD_LLM_REASONING on the server overrides the switch; null = the switch decides. */
+  const thinkOverride = useStore((s) => s.status?.plannerReasoning ?? null);
   const [cutId, setCutId] = useState<number | null>(null);
 
   const direction = directorDirection(picks, era);
@@ -132,14 +136,21 @@ export default function DirectorPage() {
   async function plan() {
     if (!scene.trim()) { toast('Write the scene first', true); return; }
     try {
-      const p = await api.directorPlan({ scene, shots: want || undefined });
+      const p = await api.directorPlan({ scene, shots: want || undefined, think });
+      const started = Date.now();
       setPlanning(p.id);
       setPlanNote('');
+      setPlanLive(null);
       const poll = async () => {
         try {
           const q = await api.directorPlanStatus(p.id);
-          if (q.status === 'running') { planTimer.current = window.setTimeout(() => void poll(), 1500); return; }
+          if (q.status === 'running') {
+            setPlanLive(planLiveOf(q, want, started));
+            planTimer.current = window.setTimeout(() => void poll(), 1500);
+            return;
+          }
           setPlanning(null);
+          setPlanLive(null);
           if (q.status === 'failed' || !q.shots) { toast(q.error ?? 'Planning failed', true); return; }
           setShots(q.shots.map((s) => ({ ...s, key: newKey() })));
           setCutId(null);
@@ -147,6 +158,7 @@ export default function DirectorPage() {
           setPlanNote(`${q.shots.length} shots, planned by ${by}${q.seconds ? ` in ${Math.round(q.seconds)}s` : ''}.`);
         } catch (e) {
           setPlanning(null);
+          setPlanLive(null);
           toast(e instanceof Error ? e.message : 'Planning failed', true);
         }
       };
@@ -280,6 +292,15 @@ export default function DirectorPage() {
               <TierChip app="scene" value={res} onChange={setRes} />
               <span className="chip" style={{ gap: 10 }} title="Make a Qwen-Image hero frame per shot first, then shoot from it"><Icon name="image" size={14} />Hero frames <Switch on={heroFrames} onChange={setHeroFrames} label="hero frames" /></span>
               <span className="chip" style={{ gap: 10 }}><Icon name="audio" size={14} />Sound <Switch on={audio} onChange={setAudio} label="sound" /></span>
+              {thinkOverride ? (
+                <span className="chip dim" title={`Set on the server: OPENFIELD_LLM_REASONING=${thinkOverride}`}>
+                  <Icon name="sparkle" size={14} />Think first: {thinkOverride === 'none' ? 'off' : 'on'} (server)
+                </span>
+              ) : (
+                <span className="chip" style={{ gap: 10 }} title="Let the planner's model think before it writes the shot list: slower, steadier on scenes with many beats. Leave it off to try ideas quickly; switch it on once the scene works.">
+                  <Icon name="sparkle" size={14} />Think first <Switch on={think} onChange={setThink} label="think first" />
+                </span>
+              )}
             </div>
             <button type="button" className="btn" disabled={!!planning || !scene.trim()} onClick={() => void plan()}>
               <Icon name="sparkle" size={14} />{planning ? 'Planning the shots...' : shots.length ? 'Plan again' : 'Plan shots'}
@@ -312,7 +333,7 @@ export default function DirectorPage() {
         <div className="canvas-head"><div className="tabs" style={{ borderBottom: 0 }}><button type="button" className="on">{mode === 'scene' ? 'Scene' : 'Shots'}</button></div></div>
         <div className="canvas-body">
           {mode === 'scene' && (
-            <ShotStrip shots={shots} takes={allTakes} planNote={planNote} planning={!!planning} direction={directorDirection({ ...picks, framing: 'auto' }, era)}
+            <ShotStrip shots={shots} takes={allTakes} planNote={planNote} planning={!!planning} planLive={planLive} direction={directorDirection({ ...picks, framing: 'auto' }, era)}
               onEdit={edit} onMove={moveShot} onReroll={reroll} onRemove={(i) => setShots(shots.filter((_, k) => k !== i))} onAdd={addShot} onOpen={setViewing} busy={busy} />
           )}
           {takes.length === 0 ? (
@@ -420,8 +441,24 @@ function EraScrubber(p: { era: number | null; onEra: (v: number | null) => void;
   );
 }
 
+/** What the strip shows while a plan runs: who plans, what it is doing, and the shots written so far. */
+interface PlanLive { text: string; partial: { framing: string; move: string; action: string }[]; slots: number }
+
+function planLiveOf(q: ScenePlan, want: number, started: number): PlanLive {
+  const partial = q.partial ?? [];
+  const who = q.stage === 'engine' ? 'Gemma 3 on the engine'
+    : q.stage === 'llm' ? (q.model || 'the OpenAI-compatible LLM')
+    : q.stage === 'ollama' ? 'Ollama' : 'The planner';
+  const n = partial.length;
+  const doing = q.phase === 'thinking' ? 'thinking'
+    : q.phase === 'writing' ? (want && n >= want ? 'finishing the list' : `writing shot ${n + 1}${want ? ` of ${want}` : ''}`)
+    : q.stage === 'engine' ? 'waiting for the engine' : 'waiting for the model';
+  const secs = Math.round((Date.now() - started) / 1000);
+  return { text: `${who}: ${doing} · ${secs}s`, partial, slots: Math.max(want || 3, n + (q.phase === 'writing' && (!want || n < want) ? 1 : 0)) };
+}
+
 function ShotStrip(p: {
-  shots: StripShot[]; takes: Take[]; planNote: string; planning: boolean; direction: string[]; busy: boolean;
+  shots: StripShot[]; takes: Take[]; planNote: string; planning: boolean; planLive: PlanLive | null; direction: string[]; busy: boolean;
   onEdit: (i: number, patch: Partial<StripShot>) => void; onMove: (i: number, d: -1 | 1) => void; onReroll: (i: number) => void;
   onRemove: (i: number) => void; onAdd: () => void; onOpen: (id: number) => void;
 }) {
@@ -431,10 +468,18 @@ function ShotStrip(p: {
     <div className="strip-wrap">
       <div className="strip-head">
         <span className="label">Shot list{p.shots.length ? ` · ${p.shots.length} shots · ${total}s before ramps` : ''}</span>
-        <span className="dim" style={{ fontSize: 12 }}>{p.planning ? 'Planning on the local model...' : p.planNote}</span>
+        <span className="dim" style={{ fontSize: 12 }}>{p.planning ? (p.planLive?.text ?? 'Planning on the local model...') : p.planNote}</span>
       </div>
       <div className="strip">
-        {p.planning && !p.shots.length && [0, 1, 2].map((i) => <div key={i} className="shot ghost"><div className="shot-media" /></div>)}
+        {p.planning && !p.shots.length && Array.from({ length: p.planLive?.slots ?? 3 }, (_, i) => {
+          const s = p.planLive?.partial[i];
+          return (
+            <div key={i} className="shot ghost">
+              <div className="shot-media" style={s ? { animation: 'none' } : undefined}>{s && <span className="shot-no">{i + 1}</span>}</div>
+              {s && <div style={{ padding: '8px 10px', fontSize: 12 }}><div className="dim">{s.framing} · {s.move}</div><div>{s.action}</div></div>}
+            </div>
+          );
+        })}
         {p.shots.map((s, i) => (
           <ShotCard key={s.key} i={i} n={p.shots.length} shot={s} takes={p.takes} prompt={shotPrompt(s, p.direction)} busy={p.busy}
             onEdit={(patch) => p.onEdit(i, patch)} onMove={(d) => p.onMove(i, d)} onReroll={() => p.onReroll(i)} onRemove={() => p.onRemove(i)} onOpen={p.onOpen} />
