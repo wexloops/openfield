@@ -16,6 +16,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { config } from './config.js';
+import { unloadOnModelSwitch } from './modelSwitch.js';
 
 // 'expired': the proxy lost the job (e.g. ComfyUI restarted under it).
 const TERMINAL = new Set(['succeeded', 'failed', 'canceled', 'cancelled', 'expired']);
@@ -122,6 +123,9 @@ export async function executedWorkflow(jobId: string): Promise<Record<string, un
 
 /** Submit an API-format graph. Returns the Comfy job id. */
 export async function submit(graph: Record<string, unknown>): Promise<string> {
+  // A local ComfyUI that keeps every model loaded (--highvram) is cleared first
+  // when this graph needs a different large model (server/modelSwitch.ts).
+  if (isLocal()) await unloadOnModelSwitch(graph);
   const wf = sdk().workflows.fromJson(bindAssets(graph));
   const job = await sdk().submit(wf);
   jobs.set(job.id, job);
