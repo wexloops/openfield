@@ -213,8 +213,11 @@ async function planOnLlm(scene: string, want: number, think: boolean, progress: 
     const r = await fetch(`${LLM}/models`, { headers, signal: AbortSignal.timeout(5000) });
     if (!r.ok) throw new Error(`${LLM}/models answered ${r.status}`);
     const list = (await r.json()) as { data?: { id?: string }[] };
-    model = list.data?.find((m) => m.id)?.id ?? '';
-    if (!model) throw new Error(`${LLM}/models lists no model; set OPENFIELD_LLM_MODEL`);
+    // A server with one model (llama-server) is asked as it is. One that lists several (LM Studio lists
+    // every downloaded model, embedding models too, and loads the one asked for) needs the choice made.
+    const ids = (list.data ?? []).flatMap((m) => (m.id ? [m.id] : []));
+    if (ids.length !== 1) throw new Error(`${LLM}/models lists ${ids.length || 'no'} model${ids.length === 1 ? '' : 's'}; set OPENFIELD_LLM_MODEL`);
+    model = ids[0];
   }
   progress({ model, phase: 'waiting' });
   const max = want || SCENE_MAX_SHOTS;
