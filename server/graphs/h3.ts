@@ -150,6 +150,14 @@ export const H3_MODELS = {
   audioVae: 'minimax_h3_audio_vae_fp32.safetensors',
 };
 
+/** Why a turbo preset cannot run with the LoRAs ComfyUI lists (`have`), or null when it can. */
+export function turboProblem(turbo: string, useRef: boolean, have: ReadonlySet<string>): string | null {
+  const t = resolveTurbo(turbo, useRef);
+  if (!t) return `Unknown H3 turbo preset "${turbo}". Use one of: ${H3_TURBO_PRESETS.map((p) => p.id).join(', ')}.`;
+  if (have.has(t.lora)) return null;
+  return `The H3 turbo preset "${turbo}" needs ${t.lora} in models/loras/. "npm run models -- --only h3-turbo" fetches the lightx2v distills.`;
+}
+
 /** Frame counts must sit on the model's 17k+5 grid (5, 22, ..., 124, ..., 362). */
 export function snapH3Length(frames: number): number {
   const k = Math.round((frames - 5) / 17);

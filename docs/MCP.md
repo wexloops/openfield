@@ -92,7 +92,7 @@ The server registers 31 tools.
 | `status` | | Engine up, ComfyUI version, GPU and free VRAM, queue, installed model bundles |
 | `list_presets` | | Motion presets, LoRA effects, Director axes, Mirror modes, Reshoot angles, Transition styles, Edit modes and their options, model menus |
 | `list_recipes` | | Ready-made prompt + preset pairs |
-| `generate_video` | Video | Text to video, or start frame / start + end frame; preset, seconds, aspect, resolution, audio, count, model, `loras` (LTX-2.5) |
+| `generate_video` | Video | Text to video, or start frame / start + end frame; preset, seconds, aspect, resolution, audio, count, model, `loras` (LTX-2.5), `turbo` (H3: a 4-, 6- or 8-step distill instead of 20 steps, when its LoRA is installed) |
 | `make_loop` | Seamless Loop | One image as first and last frame; every loop is measured; `auto_fix` (off by default) also tries to improve a visible seam |
 | `generate_image` | Image | Qwen-Image or FLUX.2; aspect, quality, resolution, count, `loras`; on FLUX.2 up to 6 `references` (files or `take:<id>`) carried into a new photograph |
 | `list_loras` | Your LoRAs | Every LoRA the engine sees that no app loads by itself, with the model family read from its tensor keys; pass names as `loras` (`{ name, strength }`, up to 4) |

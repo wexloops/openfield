@@ -14,7 +14,7 @@ import type { WebSocket } from 'ws';
 import * as comfy from './comfy.js';
 import * as eng from './engine.js';
 import { config, ROOT } from './config.js';
-import { buildH3Graph, snapH3Length } from './graphs/h3.js';
+import { buildH3Graph, snapH3Length, turboProblem } from './graphs/h3.js';
 import { buildLtxGraph } from './graphs/ltx.js';
 import { buildLtx25Graph, ltx25EffectiveSize, ltx25Mode, LTX25_FPS, snapFrames } from './graphs/ltx25.js';
 import { applyPost } from './graphs/director.js';
@@ -777,6 +777,11 @@ async function graphFor(b: any, seed: number): Promise<Built> {
     });
   } else {
     kind = 'video';
+    const turbo = typeof b.h3Turbo === 'string' && b.h3Turbo ? b.h3Turbo : undefined;
+    if (turbo) {
+      const problem = turboProblem(turbo, !!b.refImages?.length, new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name')));
+      if (problem) throw new Error(problem);
+    }
     graph = buildH3Graph({
       prompt: b.prompt,
       width: b.width || 864,
@@ -791,7 +796,7 @@ async function graphFor(b: any, seed: number): Promise<Built> {
       extraLora: typeof b.extraLora === 'string' && b.extraLora ? b.extraLora : undefined,
       extraLoraStrength: b.extraLoraStrength,
       // Turbo overrides steps/shift inside the builder; '' = full sampling.
-      turbo: typeof b.h3Turbo === 'string' && b.h3Turbo ? b.h3Turbo : undefined,
+      turbo,
       // House rule: no audio on visual loops. Opt in per shot for dialogue.
       withAudio: !!b.withAudio,
     });
