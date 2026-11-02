@@ -112,7 +112,7 @@ async function freeWhenNext(ahead: Set<string>, pollMs: number): Promise<void> {
  * the background). The graph's models are then remembered as the loaded set.
  */
 export async function unloadOnModelSwitch(
-  graph: Record<string, unknown>, opts = { pollMs: 1000, settleMs: 2000 },
+  graph: Record<string, unknown>, opts = { pollMs: 250, settleMs: 2000 },
 ): Promise<(() => void) | undefined> {
   const next = heavyModels(graph);
   if (!next.size || !(await keepsModelsLoaded())) return;
