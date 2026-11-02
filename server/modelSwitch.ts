@@ -10,8 +10,9 @@
  * is system memory), that ran Windows out of virtual memory and crashed
  * ComfyUI mid-load.
  *
- * ComfyUI's /free sets a flag its worker acts on as soon as it is idle, or
- * right after the job it is running; either way before the next job starts.
+ * ComfyUI's /free sets a flag its worker reads after each job (or at once when
+ * idle). With jobs queued ahead, the flag is set only while the last of them
+ * runs, so it is not spent between two of them.
  */
 import { config } from './config.js';
 
@@ -66,28 +67,73 @@ async function keepsModelsLoaded(): Promise<boolean> {
   }
 }
 
-/**
- * Call before a graph goes to the local ComfyUI. Unloads every model first
- * when the graph needs a large model that is not loaded yet, then remembers
- * the graph's models as the loaded set.
- */
-export async function unloadOnModelSwitch(graph: Record<string, unknown>): Promise<void> {
-  const next = heavyModels(graph);
-  if (!next.size) return;
-  if (await keepsModelsLoaded()) {
-    if (needsUnload(loaded, next)) {
-      await fetch(`${config.comfyUrl}/free`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unload_models: true, free_memory: true }),
-        signal: AbortSignal.timeout(10_000),
-      }).catch(() => null);
-      console.log(`[openfield] unloading ComfyUI models before switching to ${[...next].join(', ')}`);
-      // An idle worker acts on the flag right away; give it that moment before the job arrives.
-      await new Promise((r) => setTimeout(r, 2000));
-      loaded = new Set(next);
-    } else {
-      loaded = new Set([...(loaded ?? []), ...next]);
-    }
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const freeModels = () =>
+  fetch(`${config.comfyUrl}/free`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ unload_models: true, free_memory: true }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => null);
+
+/** The prompt ids ComfyUI is running or holds, in order; null when it cannot be asked. */
+async function queuedIds(): Promise<string[] | null> {
+  try {
+    const r = await fetch(`${config.comfyUrl}/queue`, { signal: AbortSignal.timeout(4000) });
+    const q = (await r.json()) as { queue_running?: unknown[][]; queue_pending?: unknown[][] };
+    return [...(q.queue_running ?? []), ...(q.queue_pending ?? [])].map((e) => String(e[1]));
+  } catch {
+    return null;
   }
+}
+
+/**
+ * Set the unload flag once only the last of the `ahead` jobs is left: the
+ * worker reads the flag after each job, so it unloads right before ours. A
+ * flag set any earlier would be spent between two jobs ahead of ours.
+ */
+async function freeWhenNext(ahead: Set<string>, pollMs: number): Promise<void> {
+  for (;;) {
+    const ids = await queuedIds();
+    if (!ids || ids.filter((id) => ahead.has(id)).length <= 1) {
+      await freeModels();
+      return;
+    }
+    await sleep(pollMs);
+  }
+}
+
+/**
+ * Call before a graph goes to the local ComfyUI. When the graph needs a large
+ * model that is not loaded, every model is unloaded before it runs: at once
+ * when ComfyUI's queue is empty, else just before the graph's turn (the
+ * returned function, called once the graph is submitted, watches the queue in
+ * the background). The graph's models are then remembered as the loaded set.
+ */
+export async function unloadOnModelSwitch(
+  graph: Record<string, unknown>, opts = { pollMs: 1000, settleMs: 2000 },
+): Promise<(() => void) | undefined> {
+  const next = heavyModels(graph);
+  if (!next.size || !(await keepsModelsLoaded())) return;
+  if (!needsUnload(loaded, next)) {
+    loaded = new Set([...(loaded ?? []), ...next]);
+    return;
+  }
+  loaded = new Set(next);
+  console.log(`[openfield] unloading ComfyUI models before switching to ${[...next].join(', ')}`);
+  const ahead = (await queuedIds()) ?? [];
+  if (ahead.length) return () => void freeWhenNext(new Set(ahead), opts.pollMs);
+  await freeModels();
+  // An idle worker acts on the flag right away; give it that moment before the job arrives.
+  await sleep(opts.settleMs);
+  return undefined;
+}
+
+let chain: Promise<unknown> = Promise.resolve();
+/** Run submissions one at a time, so each one sees the jobs submitted before it in ComfyUI's queue. */
+export function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(fn);
+  chain = run.catch(() => {});
+  return run;
 }

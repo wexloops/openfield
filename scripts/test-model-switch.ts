@@ -6,9 +6,29 @@
  */
 import assert from 'assert/strict';
 import { readFileSync } from 'fs';
+import { createServer } from 'http';
+import type { AddressInfo } from 'net';
 import { join } from 'path';
-import { ROOT } from '../server/config.js';
-import { heavyModels, needsUnload } from '../server/modelSwitch.js';
+
+// A fake ComfyUI with --highvram: `queue` is what /queue answers on each poll in
+// turn (the last one repeats), and every request lands in `log`.
+const log: string[] = [];
+let queue: [string[], string[]][] = [[[], []]];
+const server = createServer((req, res) => {
+  log.push(`${req.method} ${req.url}`);
+  res.setHeader('content-type', 'application/json');
+  if (req.url === '/system_stats') return res.end(JSON.stringify({ system: { argv: ['main.py', '--highvram'] } }));
+  if (req.url === '/queue') {
+    const [running, pending] = queue.length > 1 ? queue.shift()! : queue[0];
+    return res.end(JSON.stringify({ queue_running: running.map((id, i) => [i, id]), queue_pending: pending.map((id, i) => [i + 1, id]) }));
+  }
+  res.end('{}');
+});
+await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+process.env.COMFY_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+// config.ts reads COMFY_URL at import, so the modules load after it is set.
+const { ROOT } = await import('../server/config.js');
+const { heavyModels, modelsUnloaded, needsUnload, unloadOnModelSwitch } = await import('../server/modelSwitch.js');
 
 let passed = 0;
 let failed = 0;
@@ -72,5 +92,49 @@ check('a graph without large models (cutout still) never unloads', () => {
   assert.equal(models('cutout-still').size, 0);
 });
 
+async function checkAsync(name: string, fn: () => Promise<void>) {
+  try {
+    await fn();
+    passed++;
+    console.log(`  ok    ${name}`);
+  } catch (e) {
+    failed++;
+    console.log(`  FAIL  ${name}\n        ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+const graph = (file: string) => JSON.parse(readFileSync(join(ROOT, 'workflows', `${file}.json`), 'utf8')) as Record<string, unknown>;
+const fast = { pollMs: 5, settleMs: 0 };
+/** Submit `file` after `before`, the way engine.submit does; returns the requests from the switch on. */
+async function switchTo(before: string, file: string): Promise<string[]> {
+  modelsUnloaded();
+  await unloadOnModelSwitch(graph(before), fast); // nothing loaded: never unloads, remembers its models
+  log.length = 0;
+  const queued = await unloadOnModelSwitch(graph(file), fast);
+  log.push('submit');
+  queued?.();
+  await new Promise((r) => setTimeout(r, 100));
+  return log.filter((l) => l !== 'GET /system_stats');
+}
+
+console.log('\nAgainst a fake ComfyUI (--highvram)');
+
+await checkAsync('switch with an empty queue: models are freed before the graph is submitted', async () => {
+  queue = [[[], []]];
+  assert.deepEqual(await switchTo('video-t2v', 'image-qwen'), ['GET /queue', 'POST /free', 'submit']);
+});
+
+await checkAsync('switch with jobs ahead: submitted at once, freed only once the last job ahead runs', async () => {
+  // Two jobs ahead (a running, b waiting); a is done by the fourth poll.
+  queue = [[['a'], ['b']], [['a'], ['b']], [['a'], ['b']], [['a'], ['b']], [['b'], []]];
+  assert.deepEqual(await switchTo('video-t2v', 'image-qwen'), ['GET /queue', 'submit', 'GET /queue', 'GET /queue', 'GET /queue', 'GET /queue', 'POST /free']);
+});
+
+await checkAsync('the same model family never frees, queue or not', async () => {
+  queue = [[['a'], []]];
+  assert.deepEqual(await switchTo('video-t2v', 'extend-forward'), ['submit']);
+});
+
+server.close();
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
