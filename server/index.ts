@@ -56,6 +56,7 @@ import { cleanStageScene, lookSize, stageTier } from '../src/stage.js';
 import { appTier, isRenderTier, parseTier, tierSizeOf, type TierApp } from '../src/renderTier.js';
 import { currentTier, setTier, tierState } from './renderTier.js';
 import { MIN_PASSWORD, installJudge, type JudgeState } from './judge.js';
+import { estimate } from './estimate.js';
 
 if (config.judge.on && config.judge.password.length < MIN_PASSWORD) {
   console.error(`OPENFIELD_JUDGE is on, so OPENFIELD_JUDGE_PASSWORD must be set (${MIN_PASSWORD} characters or more). Not starting.`);
@@ -2128,31 +2129,7 @@ app.get('/api/poster/:id', async (req, reply) => {
 });
 
 /** Typical render time for a shot like this one, from past takes on this machine. */
-app.get('/api/estimate', async (req) => {
-  const q = req.query as any;
-  const want = (t: any) => {
-    const s = JSON.parse(t.settings);
-    if (t.kind !== (q.kind === 'still' || q.kind === 'upres' || q.kind === 'object' ? q.kind : 'video')) return false;
-    // Upscale takes only answer for the Upscale app, per mode.
-    if ((s.app === 'upscale') !== (q.app === 'upscale')) return false;
-    // Apps with their own pipeline (Remove background, Restyle, Swap) only answer for themselves.
-    if (q.app && s.app !== q.app) return false;
-    if (q.mode && s.mode !== q.mode) return false;
-    if (q.model && (s.videoModel || s.model) !== q.model) return false;
-    if (q.quality && s.quality && s.quality !== q.quality) return false;
-    const px = (s.width || 0) * (s.height || 0);
-    const qpx = Number(q.w) * Number(q.h);
-    if (qpx && Math.abs(px - qpx) / qpx > 0.25) return false;
-    if (q.seconds && s.seconds && Math.abs(s.seconds - Number(q.seconds)) > 1) return false;
-    return true;
-  };
-  const secs = takes
-    .list(null, 400)
-    .filter((t) => t.status === 'done' && t.render_seconds && want(t))
-    .map((t) => t.render_seconds!)
-    .sort((a, b) => a - b);
-  return { seconds: secs.length ? secs[Math.floor(secs.length / 2)] : null, samples: secs.length };
-});
+app.get('/api/estimate', async (req) => estimate(req.query as Record<string, string | undefined>, takes.list(null, 400)));
 
 /** Unload models and free VRAM on the local engine. */
 app.post('/api/free', async (_req, reply) => {

@@ -8,6 +8,7 @@
 import assert from 'assert/strict';
 import { H3_REF_TURBO_FILE, H3_TURBO, H3_TURBO_FILES, availableH3Turbo } from '../src/presets.js';
 import { H3_REF_TURBO_LORA, H3_TURBO_PRESETS, buildH3Graph, turboProblem } from '../server/graphs/h3.js';
+import { estimate, type EstimateTake } from '../server/estimate.js';
 
 let failed = 0;
 function check(name: string, fn: () => void) {
@@ -42,6 +43,22 @@ check('the server lets a listed preset run, and refuses a missing LoRA or an unk
   assert.match(turboProblem('v10-8', false, new Set([V11]))!, /needs minimax_h3_fl2v_turbo_8step.*models\/loras.*h3-turbo/);
   assert.match(turboProblem('v11-4', true, new Set([V11]))!, /ref2v/, 'Refs mode needs the ref2v distill');
   assert.match(turboProblem('warp-9', false, new Set([V11]))!, /Unknown H3 turbo preset "warp-9"/);
+  assert.match(turboProblem('fasth3-6', false, new Set([V11]))!, /does not download this one/, 'no bundle has the FastH3 file');
+});
+
+check('the estimate keeps H3 turbo and full sampling apart, and LTX-2.5 as it was', () => {
+  const take = (settings: Record<string, unknown>, render_seconds: number): EstimateTake =>
+    ({ kind: 'video', status: 'done', render_seconds, settings: JSON.stringify({ width: 896, height: 512, seconds: 5, ...settings }) });
+  const list = [
+    take({ videoModel: 'h3' }, 1116), take({ videoModel: 'h3' }, 1100),
+    take({ videoModel: 'h3', h3Turbo: 'v11-4' }, 247), take({ videoModel: 'h3', h3Turbo: 'v11-4' }, 250),
+    take({ videoModel: 'ltx25' }, 90),
+  ];
+  const q = { kind: 'video', model: 'h3', w: '896', h: '512', seconds: '5' };
+  assert.deepEqual(estimate({ ...q, turbo: 'v11-4' }, list), { seconds: 250, samples: 2 });
+  assert.deepEqual(estimate({ ...q, turbo: 'none' }, list), { seconds: 1116, samples: 2 });
+  assert.deepEqual(estimate({ ...q, turbo: 'v10-8' }, list), { seconds: null, samples: 0 });
+  assert.deepEqual(estimate({ ...q, model: 'ltx25' }, list), { seconds: 90, samples: 1 });
 });
 
 check('a turbo graph loads its LoRA and runs its steps', () => {

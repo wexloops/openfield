@@ -333,7 +333,7 @@ server.registerTool('generate_video', {
       .describe('Only when the prompt @mentions cast and there is no start/end image. sheet: their pictures on a reference sheet steer every frame (LTX-2.5 Ingredients, 768x448-class, 5 s minimum). frame: a hero frame of them is composed first, then animated.'),
     loras,
     turbo: z.enum(H3_TURBO.map((t) => t.key) as [string, ...string[]]).optional()
-      .describe('H3 only: a step distill instead of full 20-step sampling, several times faster. v11-4 / v10-4 = 4 steps, v10-8 = 8 steps (closer to full quality), fasth3-6 = 6 steps. Needs its LoRA in ComfyUI (npm run models -- --only h3-turbo).'),
+      .describe('H3 only: a step distill instead of full 20-step sampling, several times faster. v11-4 / v10-4 = 4 steps, v10-8 = 8 steps (closer to full quality), fasth3-6 = 6 steps. Needs its LoRA in ComfyUI: npm run models -- --only h3-turbo fetches v11-4, v10-4 and v10-8; the fasth3-6 file is in no bundle.'),
   },
   annotations: GPU,
 }, safe(async (a) => {

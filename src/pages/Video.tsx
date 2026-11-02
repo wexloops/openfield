@@ -69,7 +69,7 @@ export default function VideoPage() {
   const castOn = castNamed.length > 0 && model.id === 'ltx25' && !start && !end;
   const sheetOn = castOn && castMode === 'sheet';
   const shown = sheetOn ? (({ width, height }) => ({ w: width, h: height }))(sheetSize(size.w, size.h)) : size;
-  const est = useEstimate({ kind: 'video', model: model.id, w: shown.w, h: shown.h, seconds: sheetOn ? Math.max(5, seconds) : seconds });
+  const est = useEstimate({ kind: 'video', model: model.id, w: shown.w, h: shown.h, seconds: sheetOn ? Math.max(5, seconds) : seconds, ...(model.id === 'h3' ? { turbo: turbo || 'none' } : {}) });
   const takes = useStore((s) => s.takes.filter((t) => inFeed(t) && !isImage(t) && !isModel(t)));
   const compiled = compilePrompt([prompt, preset.text]);
   const needsStart = model.id === 'h3' || mode === 'loop';

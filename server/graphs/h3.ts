@@ -155,7 +155,8 @@ export function turboProblem(turbo: string, useRef: boolean, have: ReadonlySet<s
   const t = resolveTurbo(turbo, useRef);
   if (!t) return `Unknown H3 turbo preset "${turbo}". Use one of: ${H3_TURBO_PRESETS.map((p) => p.id).join(', ')}.`;
   if (have.has(t.lora)) return null;
-  return `The H3 turbo preset "${turbo}" needs ${t.lora} in models/loras/. "npm run models -- --only h3-turbo" fetches the lightx2v distills.`;
+  const from = /fasth3/.test(t.lora) ? 'OpenField does not download this one; put it there yourself.' : '"npm run models -- --only h3-turbo" fetches it.';
+  return `The H3 turbo preset "${turbo}" needs ${t.lora} in models/loras/. ${from}`;
 }
 
 /** Frame counts must sit on the model's 17k+5 grid (5, 22, ..., 124, ..., 362). */
