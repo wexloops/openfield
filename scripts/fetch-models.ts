@@ -15,13 +15,13 @@
  * into place only when curl finishes, so an interrupted 21GB pull picks up
  * where it stopped and is never mistaken for a finished file.
  *
- * An LTX-2.5 file replaced through OPENFIELD_LTX25_* (server/graphs/ltxfiles.ts)
- * is checked for under its configured name and never downloaded.
+ * A file set for a model slot in .env (server/graphs/slots.ts) is checked for
+ * under its configured name and never downloaded.
  */
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync, renameSync, statSync } from 'fs';
 import { join } from 'path';
-import { activeBundles, bundleGb, type Bundle, type ModelFile } from '../server/models.js';
+import { activeBundles, bundleGb, downloadPlan, type Bundle, type ModelFile } from '../server/models.js';
 import { config } from '../server/config.js';
 import { getStatus } from '../server/comfy.js';
 import { preflight } from '../server/preflight.js';
@@ -36,7 +36,7 @@ const valueOf = (f: string): string | undefined => {
 const DEST = valueOf('--dest') || config.comfyModelsDir;
 const TOKEN = process.env.HF_TOKEN || '';
 const DRY = has('--dry-run');
-// The manifest with any OPENFIELD_LTX25_* file in place of the stock one it
+// The manifest with any file a slot variable sets in place of the stock one it
 // replaces: such a file is checked for, never downloaded.
 const BUNDLES = activeBundles();
 
@@ -128,7 +128,7 @@ async function list(): Promise<void> {
     const state = missing.length === 0 ? c.ok(' OK  ') : c.bad('MISS ');
     console.log(`${state} ${c.bold(b.id.padEnd(10))} ${b.label}  ${c.dim(`${bundleGb(b)} GB${b.optional ? ' · optional' : ''}`)}`);
     if (b.licenseWarning) console.log(`       ${c.warn(b.licenseWarning)}`);
-    for (const f of missing) console.log(c.dim(`       missing  models/${f.dir}/${f.file}${f.override ? `  (set by ${f.override})` : ''}`));
+    for (const f of missing) console.log(c.dim(`       missing  models/${f.dir}/${f.file}${f.slot ? `  (${f.slot.origin})` : ''}`));
     for (const n of packsOf([b])) console.log(c.dim(`       needs custom nodes: ${n.pack}  ${n.url}`));
   }
   console.log('');
@@ -184,9 +184,7 @@ async function main(): Promise<void> {
   // LoRA); fetch each file once.
   const wanted = [...new Map(bundles.flatMap((b) => b.files).map((f) => [`${f.dir}/${f.file}`, f])).values()];
   const absent = wanted.filter((f) => !check.has(f));
-  // A file set by an OPENFIELD_LTX25_* variable has no download source here.
-  const configured = absent.filter((f) => f.override);
-  const todo = absent.filter((f) => !f.override);
+  const { fetch: todo, configured } = downloadPlan(absent);
   const skipped = wanted.length - absent.length;
 
   console.log(`\n${c.bold('OpenField models')} → ${DEST}`);
@@ -202,7 +200,7 @@ async function main(): Promise<void> {
   }
 
   for (const f of configured) {
-    console.log(c.warn(`Not found: models/${f.dir}/${f.file}, set by ${f.override}. It is not downloaded; put it there, or fix the name in .env.`));
+    console.log(c.warn(`Not found: models/${f.dir}/${f.file}, ${f.slot.origin}. It is not downloaded; put it there, or fix the name in .env.`));
   }
 
   if (!todo.length) {

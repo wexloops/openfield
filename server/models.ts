@@ -19,7 +19,7 @@
  * matches the file on disk byte for byte.
  */
 
-import { LTX25_ENV, LTX25_STOCK, ltx25Overrides, type Ltx25Slot } from './graphs/ltxfiles.js';
+import { configuredSlots, modelSlot, slotOrigin, type SlotId } from './graphs/slots.js';
 
 export interface ModelFile {
   /** Filename ComfyUI must see. Referenced verbatim by a graph builder. */
@@ -54,11 +54,12 @@ export interface ModelFile {
   /** Repo requires accepting a license on the model page before download. */
   gated?: boolean;
   /**
-   * Set when an environment variable replaced the stock file (see
-   * server/graphs/ltxfiles.ts): the variable's name. `file` is then the
-   * configured name, which the installer never downloads.
+   * Set when a model slot loads another file than the stock one (see
+   * server/graphs/slots.ts): the slot's id, and where the file came from as
+   * the messages show it (slotOrigin). `file` is then that file, which the
+   * installer never downloads.
    */
-  override?: string;
+  slot?: { id: SlotId; origin: string };
 }
 
 export interface Bundle {
@@ -77,6 +78,11 @@ export interface Bundle {
 }
 
 const HF = (repo: string, path: string, gb: number, gated = false) => ({ repo, path, gb, gated });
+/** A model slot's stock file in the slot's folder (server/graphs/slots.ts), at `folder` + its name in the repo. */
+const fromSlot = (id: SlotId, repo: string, folder: string, gb: number, gated = false): ModelFile => {
+  const s = modelSlot(id);
+  return { file: s.stock, dir: s.dir, ...HF(repo, `${folder}${s.stock}`, gb, gated) };
+};
 
 export const BUNDLES: Bundle[] = [
   {
@@ -85,16 +91,11 @@ export const BUNDLES: Bundle[] = [
     purpose: 'Video + Loop modes on the LTX-2.5 engine. The recommended starting point: it is the only video engine here whose license permits commercial delivery, and its first/last-frame mode closes seamless loops without a post dissolve.',
     license: 'LTX-2.x Community License Agreement (Aug 11, 2026). Free for any use, commercial included, if you (and your affiliates) earn under $10M a year; at $10M or more a paid Commercial Use Agreement is required for anything beyond non-commercial use. Acceptable-use restrictions apply. The Gemma 4 based text encoder ships in this repo under the same license.',
     files: [
-      { file: LTX25_STOCK.transformer, dir: 'diffusion_models',
-        ...HF('Lightricks/LTX-2.5', `diffusion_models/${LTX25_STOCK.transformer}`, 21.5, true) },
-      { file: LTX25_STOCK.textEncoder, dir: 'text_encoders',
-        ...HF('Lightricks/LTX-2.5', `text_encoders/${LTX25_STOCK.textEncoder}`, 15.4, true) },
-      { file: LTX25_STOCK.videoVae, dir: 'vae',
-        ...HF('Lightricks/LTX-2.5', `vae/${LTX25_STOCK.videoVae}`, 1.5, true) },
-      { file: LTX25_STOCK.audioVae, dir: 'vae',
-        ...HF('Lightricks/LTX-2.5', `vae/${LTX25_STOCK.audioVae}`, 0.4, true) },
-      { file: 'ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors', dir: 'latent_upscale_models',
-        ...HF('Lightricks/LTX-2.5', 'latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors', 1.0, true) },
+      fromSlot('ltx25.transformer', 'Lightricks/LTX-2.5', 'diffusion_models/', 21.5, true),
+      fromSlot('ltx25.textEncoder', 'Lightricks/LTX-2.5', 'text_encoders/', 15.4, true),
+      fromSlot('ltx25.videoVae', 'Lightricks/LTX-2.5', 'vae/', 1.5, true),
+      fromSlot('ltx25.audioVae', 'Lightricks/LTX-2.5', 'vae/', 0.4, true),
+      fromSlot('ltx25.upscaler', 'Lightricks/LTX-2.5', 'latent_upscale_models/', 1.0, true),
     ],
   },
   {
@@ -103,14 +104,10 @@ export const BUNDLES: Bundle[] = [
     purpose: 'Still mode. Also the cheapest way to make a start frame for a video, which is how most shots here begin.',
     license: 'Apache 2.0 (Qwen-Image, the Qwen2.5-VL text encoder, and the Lightning LoRA).',
     files: [
-      { file: 'qwen_image_fp8_e4m3fn.safetensors', dir: 'diffusion_models',
-        ...HF('Comfy-Org/Qwen-Image_ComfyUI', 'split_files/diffusion_models/qwen_image_fp8_e4m3fn.safetensors', 20.4) },
-      { file: 'qwen_2.5_vl_7b_fp8_scaled.safetensors', dir: 'text_encoders',
-        ...HF('Comfy-Org/Qwen-Image_ComfyUI', 'split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors', 9.4) },
-      { file: 'qwen_image_vae.safetensors', dir: 'vae',
-        ...HF('Comfy-Org/Qwen-Image_ComfyUI', 'split_files/vae/qwen_image_vae.safetensors', 0.3) },
-      { file: 'Qwen-Image-Lightning-8steps-V1.0.safetensors', dir: 'loras',
-        ...HF('lightx2v/Qwen-Image-Lightning', 'Qwen-Image-Lightning-8steps-V1.0.safetensors', 1.7) },
+      fromSlot('qwen.model', 'Comfy-Org/Qwen-Image_ComfyUI', 'split_files/diffusion_models/', 20.4),
+      fromSlot('qwen.textEncoder', 'Comfy-Org/Qwen-Image_ComfyUI', 'split_files/text_encoders/', 9.4),
+      fromSlot('qwen.vae', 'Comfy-Org/Qwen-Image_ComfyUI', 'split_files/vae/', 0.3),
+      fromSlot('qwen.lightning', 'lightx2v/Qwen-Image-Lightning', '', 1.7),
     ],
   },
   {
@@ -120,14 +117,10 @@ export const BUNDLES: Bundle[] = [
     license: 'Apache 2.0 (Qwen-Image-Edit 2509, the Qwen2.5-VL text encoder, and the Lightning LoRA).',
     optional: true,
     files: [
-      { file: 'qwen_image_edit_2509_fp8_e4m3fn.safetensors', dir: 'diffusion_models',
-        ...HF('Comfy-Org/Qwen-Image-Edit_ComfyUI', 'split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors', 20.4) },
-      { file: 'qwen_2.5_vl_7b_fp8_scaled.safetensors', dir: 'text_encoders',
-        ...HF('Comfy-Org/Qwen-Image_ComfyUI', 'split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors', 9.4) },
-      { file: 'qwen_image_vae.safetensors', dir: 'vae',
-        ...HF('Comfy-Org/Qwen-Image_ComfyUI', 'split_files/vae/qwen_image_vae.safetensors', 0.3) },
-      { file: 'Qwen-Image-Lightning-8steps-V1.0.safetensors', dir: 'loras',
-        ...HF('lightx2v/Qwen-Image-Lightning', 'Qwen-Image-Lightning-8steps-V1.0.safetensors', 1.7) },
+      fromSlot('qwen.editModel', 'Comfy-Org/Qwen-Image-Edit_ComfyUI', 'split_files/diffusion_models/', 20.4),
+      fromSlot('qwen.textEncoder', 'Comfy-Org/Qwen-Image_ComfyUI', 'split_files/text_encoders/', 9.4),
+      fromSlot('qwen.vae', 'Comfy-Org/Qwen-Image_ComfyUI', 'split_files/vae/', 0.3),
+      fromSlot('qwen.lightning', 'lightx2v/Qwen-Image-Lightning', '', 1.7),
     ],
   },
   {
@@ -141,14 +134,10 @@ export const BUNDLES: Bundle[] = [
     // a new user a model their country is excluded from is not a good default.
     optional: true,
     files: [
-      { file: 'minimax_h3_fl2va_pruned_fp8_scaled.safetensors', dir: 'diffusion_models',
-        ...HF('Comfy-Org/MiniMax-H3', 'diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors', 21.0) },
-      { file: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors', dir: 'text_encoders',
-        ...HF('Comfy-Org/MiniMax-H3', 'text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors', 15.7) },
-      { file: 'minimax_h3_video_vae_fp16.safetensors', dir: 'vae',
-        ...HF('Comfy-Org/MiniMax-H3', 'vae/minimax_h3_video_vae_fp16.safetensors', 5.2) },
-      { file: 'minimax_h3_audio_vae_fp32.safetensors', dir: 'vae',
-        ...HF('Comfy-Org/MiniMax-H3', 'vae/minimax_h3_audio_vae_fp32.safetensors', 0.6) },
+      fromSlot('h3.model', 'Comfy-Org/MiniMax-H3', 'diffusion_models/', 21.0),
+      fromSlot('h3.textEncoder', 'Comfy-Org/MiniMax-H3', 'text_encoders/', 15.7),
+      fromSlot('h3.videoVae', 'Comfy-Org/MiniMax-H3', 'vae/', 5.2),
+      fromSlot('h3.audioVae', 'Comfy-Org/MiniMax-H3', 'vae/', 0.6),
     ],
   },
   {
@@ -158,8 +147,7 @@ export const BUNDLES: Bundle[] = [
     license: 'MiniMax H3 Community License Agreement. Same territory exclusions as the H3 bundle (US, EU, UK, South Korea).',
     optional: true,
     files: [
-      { file: 'minimax_h3_ref2va_pruned_fp8_scaled.safetensors', dir: 'diffusion_models',
-        ...HF('Comfy-Org/MiniMax-H3', 'diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors', 21.0) },
+      fromSlot('h3.refsModel', 'Comfy-Org/MiniMax-H3', 'diffusion_models/', 21.0),
     ],
   },
   {
@@ -187,14 +175,10 @@ export const BUNDLES: Bundle[] = [
     licenseWarning: 'FLUX.2-dev is NON-COMMERCIAL. You may only run it for non-commercial purposes; any paid or revenue-generating use needs a commercial license from Black Forest Labs (bfl.ai/licensing).',
     optional: true,
     files: [
-      { file: 'flux2_dev_fp8mixed.safetensors', dir: 'diffusion_models',
-        ...HF('Comfy-Org/flux2-dev', 'split_files/diffusion_models/flux2_dev_fp8mixed.safetensors', 35.5) },
-      { file: 'mistral_3_small_flux2_fp4_mixed.safetensors', dir: 'text_encoders',
-        ...HF('Comfy-Org/flux2-dev', 'split_files/text_encoders/mistral_3_small_flux2_fp4_mixed.safetensors', 12.3) },
-      { file: 'flux2-vae.safetensors', dir: 'vae',
-        ...HF('Comfy-Org/flux2-dev', 'split_files/vae/flux2-vae.safetensors', 0.3) },
-      { file: 'Flux2TurboComfyv2.safetensors', dir: 'loras',
-        ...HF('Comfy-Org/flux2-dev', 'split_files/loras/Flux2TurboComfyv2.safetensors', 2.8) },
+      fromSlot('flux2.model', 'Comfy-Org/flux2-dev', 'split_files/diffusion_models/', 35.5),
+      fromSlot('flux2.textEncoder', 'Comfy-Org/flux2-dev', 'split_files/text_encoders/', 12.3),
+      fromSlot('flux2.vae', 'Comfy-Org/flux2-dev', 'split_files/vae/', 0.3),
+      fromSlot('flux2.turbo', 'Comfy-Org/flux2-dev', 'split_files/loras/', 2.8),
     ],
   },
   {
@@ -260,8 +244,7 @@ export const BUNDLES: Bundle[] = [
       { class: 'VHS_LoadVideo', pack: 'ComfyUI-VideoHelperSuite', url: 'https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite' },
     ],
     files: [
-      { file: 'ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors', dir: 'loras',
-        ...HF('Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control', 'ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors', 0.65) },
+      fromSlot('ltx25-loras.mirror', 'Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control', '', 0.65),
     ],
   },
   {
@@ -276,8 +259,7 @@ export const BUNDLES: Bundle[] = [
       { class: 'VHS_LoadVideo', pack: 'ComfyUI-VideoHelperSuite', url: 'https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite' },
     ],
     files: [
-      { file: 'LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors', dir: 'loras',
-        ...HF('Cseti/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2', 'LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors', 0.33) },
+      fromSlot('ltx25-loras.reshoot', 'Cseti/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2', '', 0.33),
       { file: 'moge_2_vitl_normal_fp16.safetensors', dir: 'geometry_estimation',
         ...HF('Comfy-Org/MoGe', 'geometry_estimation/moge_2_vitl_normal_fp16.safetensors', 0.66) },
     ],
@@ -316,8 +298,7 @@ export const BUNDLES: Bundle[] = [
       { class: 'LTXAddVideoICLoRAGuide', pack: 'ComfyUI-LTXVideo', url: 'https://github.com/Lightricks/ComfyUI-LTXVideo' },
     ],
     files: [
-      { file: 'ltx-2.5-22b-ic-lora-ingredients-0.9.safetensors', dir: 'loras',
-        ...HF('Lightricks/LTX-2.5-22b-IC-LoRA-Ingredients', 'ltx-2.5-22b-ic-lora-ingredients-0.9.safetensors', 1.31, true) },
+      fromSlot('ltx25-loras.cast', 'Lightricks/LTX-2.5-22b-IC-LoRA-Ingredients', '', 1.31, true),
     ],
   },
   {
@@ -360,8 +341,7 @@ export const BUNDLES: Bundle[] = [
       { class: 'LTXVSaveHLG', pack: 'ComfyUI-LTXVideo', url: 'https://github.com/Lightricks/ComfyUI-LTXVideo' },
     ],
     files: [
-      { file: 'ltx-2.5-22b-ic-lora-sdr-to-hdr-1.0.safetensors', dir: 'loras',
-        ...HF('Lightricks/LTX-2.5-22b-IC-LoRA-SDR-To-HDR', 'ltx-2.5-22b-ic-lora-sdr-to-hdr-1.0.safetensors', 1.31, true) },
+      fromSlot('ltx25-loras.hdr', 'Lightricks/LTX-2.5-22b-IC-LoRA-SDR-To-HDR', '', 1.31, true),
       { file: 'ltx-2.5-22b-ic-lora-sdr-to-hdr-scene-emb.safetensors', dir: 'embeddings',
         ...HF('Lightricks/LTX-2.5-22b-IC-LoRA-SDR-To-HDR', 'ltx-2.5-22b-ic-lora-sdr-to-hdr-scene-emb.safetensors', 0.013, true) },
     ],
@@ -400,8 +380,7 @@ export const BUNDLES: Bundle[] = [
       { class: 'VHS_LoadVideo', pack: 'ComfyUI-VideoHelperSuite', url: 'https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite' },
     ],
     files: [
-      { file: 'ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors', dir: 'loras',
-        ...HF('Lightricks/LTX-2.3-22b-IC-LoRA-In-Outpainting', 'ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors', 1.31, true) },
+      fromSlot('ltx25-loras.swap', 'Lightricks/LTX-2.3-22b-IC-LoRA-In-Outpainting', '', 1.31, true),
     ],
   },
   {
@@ -415,8 +394,7 @@ export const BUNDLES: Bundle[] = [
       { class: 'LTXAddVideoICLoRAGuide', pack: 'ComfyUI-LTXVideo', url: 'https://github.com/Lightricks/ComfyUI-LTXVideo' },
     ],
     files: [
-      { file: 'ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors', dir: 'loras',
-        ...HF('Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render', 'ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors', 1.31, true) },
+      fromSlot('ltx25-loras.stage', 'Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render', '', 1.31, true),
     ],
   },
   {
@@ -426,14 +404,10 @@ export const BUNDLES: Bundle[] = [
     license: 'Apache 2.0 (Z-Image Turbo and its Qwen3 4B text encoder, Tongyi-MAI, repackaged by Comfy Org; the Z-Image-Turbo-Fun-Controlnet-Union patch, Alibaba PAI). The VAE is the FLUX.1 autoencoder (ae.safetensors), Apache 2.0.',
     optional: true,
     files: [
-      { file: 'z_image_turbo_bf16.safetensors', dir: 'diffusion_models',
-        ...HF('Comfy-Org/z_image_turbo', 'split_files/diffusion_models/z_image_turbo_bf16.safetensors', 12.31) },
-      { file: 'qwen_3_4b.safetensors', dir: 'text_encoders',
-        ...HF('Comfy-Org/z_image_turbo', 'split_files/text_encoders/qwen_3_4b.safetensors', 8.05) },
-      { file: 'ae.safetensors', dir: 'vae',
-        ...HF('Comfy-Org/z_image_turbo', 'split_files/vae/ae.safetensors', 0.34) },
-      { file: 'Z-Image-Turbo-Fun-Controlnet-Union.safetensors', dir: 'model_patches',
-        ...HF('alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union', 'Z-Image-Turbo-Fun-Controlnet-Union.safetensors', 3.1) },
+      fromSlot('zimage.model', 'Comfy-Org/z_image_turbo', 'split_files/diffusion_models/', 12.31),
+      fromSlot('zimage.textEncoder', 'Comfy-Org/z_image_turbo', 'split_files/text_encoders/', 8.05),
+      fromSlot('zimage.vae', 'Comfy-Org/z_image_turbo', 'split_files/vae/', 0.34),
+      fromSlot('zimage.control', 'alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union', '', 3.1),
     ],
   },
   {
@@ -475,30 +449,42 @@ export const bundleGb = (b: Bundle): number =>
   Math.round(b.files.reduce((n, f) => n + f.gb, 0) * 10) / 10;
 
 /**
- * The bundles as this install runs them: a stock LTX-2.5 file that an
- * OPENFIELD_LTX25_* variable replaces is swapped for the configured file, so
- * preflight checks for the file the graphs actually load and the installer
- * does not fetch the stock one in its place. Without overrides this returns
- * BUNDLES unchanged. BUNDLES itself always holds the stock files: docs/MODELS.md
- * is generated from it.
+ * The bundles as this install runs them: a stock file whose model slot loads
+ * another file (set by the slot's variable in .env, see
+ * server/graphs/slots.ts) is swapped for that file, so preflight checks for
+ * the file the graphs actually load and the installer does not fetch the
+ * stock one in its place. Without such variables this returns BUNDLES
+ * unchanged. BUNDLES itself always holds the stock files: docs/MODELS.md is
+ * generated from it.
  */
 export function activeBundles(env: NodeJS.ProcessEnv = process.env): Bundle[] {
-  const set = ltx25Overrides(env);
-  const slots = Object.keys(set) as Ltx25Slot[];
-  if (!slots.length) return BUNDLES;
-  const bySlot = new Map(slots.map((s) => [LTX25_STOCK[s], s]));
+  const swaps = new Map(configuredSlots(env).map((c) => [c.slot.stock, c]));
+  if (!swaps.size) return BUNDLES;
   return BUNDLES.map((b) => {
-    if (!b.files.some((f) => bySlot.has(f.file))) return b;
+    if (!b.files.some((f) => swaps.has(f.file))) return b;
     return {
       ...b,
       files: b.files.map((f) => {
-        const s = bySlot.get(f.file);
+        const c = swaps.get(f.file);
         // Never downloaded, so it adds nothing to the bundle's download size.
-        return s ? { ...f, file: set[s]!, override: LTX25_ENV[s], gb: 0 } : f;
+        return c ? { ...f, file: c.file, slot: { id: c.slot.id, origin: slotOrigin(c.slot.id) }, gb: 0 } : f;
       }),
     };
   });
 }
+
+/**
+ * What `npm run models` does with files that are not installed: it fetches
+ * the stock ones and only reports the files a model slot loads in their place,
+ * which have no download source.
+ */
+export function downloadPlan(absent: ModelFile[]): { fetch: ModelFile[]; configured: SlotFile[] } {
+  return { fetch: absent.filter((f) => !isSlotFile(f)), configured: absent.filter(isSlotFile) };
+}
+
+/** A file a model slot loads in place of its stock one. */
+export type SlotFile = ModelFile & { slot: NonNullable<ModelFile['slot']> };
+export const isSlotFile = (f: ModelFile): f is SlotFile => !!f.slot;
 
 /**
  * Which bundles a given render needs. Keys match what the UI sends to

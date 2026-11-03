@@ -19,6 +19,7 @@ import { join } from 'path';
 import { config } from './config.js';
 import { comboOptions } from './comfy.js';
 import { BUNDLES } from './models.js';
+import { configuredSlots } from './graphs/slots.js';
 
 export type LoraFamily = 'ltx' | 'qwen' | 'flux2' | 'flux' | 'wan' | 'other';
 
@@ -140,12 +141,17 @@ async function classify(name: string, dirs: string[]): Promise<{ family: LoraFam
   return { family: null };
 }
 
+/** A LoRA name as ComfyUI lists it is yours: not one OpenField loads itself, nor a task LoRA. */
+export function isUserLora(name: string): boolean {
+  const base = name.split(/[\\/]/).pop()!;
+  // A file set for a LoRA slot in .env is OpenField's own as well.
+  const slotted = configuredSlots().some((c) => c.slot.dir === 'loras' && c.file === name);
+  return !BUILT_IN.has(base) && !slotted && !TASK_LORA.test(base);
+}
+
 /** Every LoRA the engine sees that is yours to add, with its family. */
 export async function listUserLoras(): Promise<UserLora[]> {
-  const names = (await comboOptions('LoraLoaderModelOnly', 'lora_name')).filter((n) => {
-    const base = n.split(/[\\/]/).pop()!;
-    return !BUILT_IN.has(base) && !TASK_LORA.test(base);
-  });
+  const names = (await comboOptions('LoraLoaderModelOnly', 'lora_name')).filter(isUserLora);
   const dirs = await loraDirs();
   const out: UserLora[] = [];
   for (const name of names) {

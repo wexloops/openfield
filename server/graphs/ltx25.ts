@@ -18,7 +18,7 @@
  *   - euler_ancestral in both passes.
  */
 
-import { ltx25Files } from './ltxfiles.js';
+import { slotFile } from './slots.js';
 
 export type Ltx25Mode = 't2v' | 'i2v' | 'flf2v';
 
@@ -92,8 +92,6 @@ export function withTriggers(prompt: string, loras: Ltx25Lora[]): string {
   return out;
 }
 
-export const UPSCALER = 'ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors';
-
 export const NEGATIVE = 'pc game, console game, video game, cartoon, childish, ugly';
 const SIGMAS_BASE = '1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0';
 export const SIGMAS_REFINE = '0.85, 0.7250, 0.4219, 0.0';
@@ -149,14 +147,14 @@ export function buildLtx25Graph(p: Ltx25Params): Record<string, unknown> {
     // ---- loaders (all standalone in 2.5) ----
     unet: {
       class_type: 'UNETLoader',
-      inputs: { unet_name: p.transformer ?? ltx25Files().transformer, weight_dtype: 'default' },
+      inputs: { unet_name: p.transformer ?? slotFile('ltx25.transformer'), weight_dtype: 'default' },
     },
     clip: {
       class_type: 'CLIPLoader',
-      inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' },
+      inputs: { clip_name: slotFile('ltx25.textEncoder'), type: 'ltxv', device: 'default' },
     },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.videoVae') } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.audioVae') } },
 
     // ---- conditioning ----
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: prompt } },
@@ -319,7 +317,7 @@ export function buildLtx25Graph(p: Ltx25Params): Record<string, unknown> {
   if (!single) {
     // ---- 2x latent upsample + refine pass at full resolution ----
     Object.assign(g, {
-      upmodel: { class_type: 'LatentUpscaleModelLoader', inputs: { model_name: UPSCALER } },
+      upmodel: { class_type: 'LatentUpscaleModelLoader', inputs: { model_name: slotFile('ltx25.upscaler') } },
       up: {
         class_type: 'LTXVLatentUpsampler',
         inputs: { samples: ['sep1', 0], upscale_model: ['upmodel', 0], vae: ['vvae', 0] },

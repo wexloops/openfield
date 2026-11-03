@@ -240,7 +240,7 @@ All optional, in `.env` (see [`.env.example`](.env.example)):
 | `FFMPEG_BIN`, `FFPROBE_BIN` | `ffmpeg`, `ffprobe` | Paths to ffmpeg and ffprobe |
 | `WHISPER_BIN` | | openai-whisper CLI: video takes with speech get a transcript |
 | `SPICE_DIR` | | Extra folder of LTX-2.3 community checkpoints for the legacy engine |
-| `OPENFIELD_LTX25_TRANSFORMER`, `_TEXT_ENCODER`, `_VIDEO_VAE`, `_AUDIO_VAE` | the stock Lightricks files | Other LTX-2.5 weights, by the name ComfyUI lists them under (see [`docs/MODELS.md`](docs/MODELS.md#other-ltx-25-weights)) |
+| `OPENFIELD_LTX25_TRANSFORMER`, `OPENFIELD_QWEN_MODEL` and the other slot variables | the stock files | Other weights for a model family, by the name ComfyUI lists them under (see [`docs/MODELS.md`](docs/MODELS.md#other-weights-for-the-same-model)) |
 
 ## Adding an app
 

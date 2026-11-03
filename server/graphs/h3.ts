@@ -4,6 +4,7 @@
  * action). One builder covers i2v, first+last-frame (loops), and
  * reference mode; the mode is inferred from which images are present.
  */
+import { slotFile } from './slots.js';
 
 export interface H3Params {
   prompt: string;
@@ -142,14 +143,6 @@ export function resolveTurbo(
   };
 }
 
-export const H3_MODELS = {
-  fl2va: 'minimax_h3_fl2va_pruned_fp8_scaled.safetensors',
-  ref2va: 'minimax_h3_ref2va_pruned_fp8_scaled.safetensors',
-  clip: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',
-  videoVae: 'minimax_h3_video_vae_fp16.safetensors',
-  audioVae: 'minimax_h3_audio_vae_fp32.safetensors',
-};
-
 /** Why a turbo preset cannot run with the LoRAs ComfyUI lists (`have`), or null when it can. */
 export function turboProblem(turbo: string, useRef: boolean, have: ReadonlySet<string>): string | null {
   const t = resolveTurbo(turbo, useRef);
@@ -182,7 +175,7 @@ export function buildH3Graph(p: H3Params): Record<string, unknown> {
   const unetName =
     p.checkpoint && p.checkpoint.includes(`minimax_h3_${family}`)
       ? p.checkpoint
-      : H3_MODELS[family];
+      : slotFile(family === 'ref2va' ? 'h3.refsModel' : 'h3.model');
   // Turbo wins over a hand-picked extraLora: the distill and its sigma shift are
   // a matched pair, and stacking a second LoRA on top muddies both.
   const turbo = resolveTurbo(p.turbo, useRef);
@@ -197,9 +190,9 @@ export function buildH3Graph(p: H3Params): Record<string, unknown> {
   const modelSrc = useShiftSrc(turbo, useLora);
   const g: Record<string, unknown> = {
     u: { class_type: 'UNETLoader', inputs: { unet_name: unetName, weight_dtype: 'default' } },
-    c: { class_type: 'CLIPLoader', inputs: { clip_name: H3_MODELS.clip, type: 'minimax', device: 'default' } },
-    vv: { class_type: 'VAELoader', inputs: { vae_name: H3_MODELS.videoVae } },
-    va: { class_type: 'VAELoader', inputs: { vae_name: H3_MODELS.audioVae } },
+    c: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('h3.textEncoder'), type: 'minimax', device: 'default' } },
+    vv: { class_type: 'VAELoader', inputs: { vae_name: slotFile('h3.videoVae') } },
+    va: { class_type: 'VAELoader', inputs: { vae_name: slotFile('h3.audioVae') } },
     sampler: { class_type: 'KSamplerSelect', inputs: { sampler_name: 'res_multistep' } },
     sched: { class_type: 'BasicScheduler', inputs: { model: [modelSrc, 0], scheduler: 'simple', steps, denoise: 1.0 } },
     noise: { class_type: 'RandomNoise', inputs: { noise_seed: p.seed } },

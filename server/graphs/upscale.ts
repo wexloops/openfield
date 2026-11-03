@@ -16,9 +16,9 @@
  * the source has a track.
  */
 import {
-  NEGATIVE, SIGMAS_REFINE, UPSCALER,
+  NEGATIVE, SIGMAS_REFINE,
 } from './ltx25.js';
-import { ltx25Files } from './ltxfiles.js';
+import { slotFile } from './slots.js';
 
 type Graph = Record<string, unknown>;
 type Link = [string, number];
@@ -259,10 +259,10 @@ export function buildDreamGraph(p: DreamParams): Graph {
   const baseW = p.width / 2;
   const baseH = p.height / 2;
   Object.assign(g, {
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' } },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: slotFile('ltx25.transformer'), weight_dtype: 'default' } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('ltx25.textEncoder'), type: 'ltxv', device: 'default' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.videoVae') } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.audioVae') } },
 
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.prompt } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative ?? NEGATIVE } },
@@ -274,7 +274,7 @@ export function buildDreamGraph(p: DreamParams): Graph {
       class_type: 'VAEEncodeTiled',
       inputs: { pixels: ['fit', 0], vae: ['vvae', 0], tile_size: 512, overlap: 64, temporal_size: 4096, temporal_overlap: 8 },
     },
-    upmodel: { class_type: 'LatentUpscaleModelLoader', inputs: { model_name: UPSCALER } },
+    upmodel: { class_type: 'LatentUpscaleModelLoader', inputs: { model_name: slotFile('ltx25.upscaler') } },
     up: { class_type: 'LTXVLatentUpsampler', inputs: { samples: ['enc', 0], upscale_model: ['upmodel', 0], vae: ['vvae', 0] } },
 
     // The model is audio-video, so the sampler wants an AV latent. The audio it

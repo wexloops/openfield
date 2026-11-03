@@ -23,6 +23,7 @@
  * Push in add the Multiple-angles LoRA when present; it was trained on Chinese
  * camera commands, which the recipes in src/catalog.ts include.
  */
+import { resolveSlot, slotFile } from './slots.js';
 
 export interface EditParams {
   /** 1 to 3 loader filenames or asset tokens. images[0] is the one edited. */
@@ -35,7 +36,7 @@ export interface EditParams {
   quality: 'draft' | 'quality';
   /** Override the step count (quality default 20, draft 8). */
   steps?: number;
-  /** Draft only: the Lightning LoRA to use (default EDIT_LIGHTNING). */
+  /** Draft only: the Lightning LoRA to use (default: the qwen.lightning slot). */
   lightning?: string;
   /** Extra LoRAs stacked on the model, e.g. the Multiple-angles LoRA. */
   loras?: { name: string; strength: number }[];
@@ -54,23 +55,28 @@ export interface EditParams {
   compose?: boolean;
 }
 
-export const EDIT_MODEL = 'qwen_image_edit_2509_fp8_e4m3fn.safetensors';
-export const EDIT_ENCODER = 'qwen_2.5_vl_7b_fp8_scaled.safetensors';
-export const EDIT_VAE = 'qwen_image_vae.safetensors';
-/** Base-model Lightning: part of the qwen bundle, the fallback fast path. */
-export const EDIT_LIGHTNING = 'Qwen-Image-Lightning-8steps-V1.0.safetensors';
 /** Optional upgrades, used when ComfyUI lists them. */
 export const EDIT_LIGHTNING_2509 = 'Qwen-Image-Edit-2509-Lightning-8steps-V1.0-bf16.safetensors';
 export const EDIT_ANGLES_LORA = 'Qwen-Edit-2509-Multiple-angles.safetensors';
+
+/**
+ * The draft Lightning LoRA for an edit. A file set for the qwen.lightning
+ * slot always wins; on the stock file, the one distilled for
+ * Qwen-Image-Edit 2509 is preferred when ComfyUI lists it (have).
+ */
+export function editLightning(have: Set<string>): string {
+  const r = resolveSlot('qwen.lightning');
+  return r.source === 'stock' && have.has(EDIT_LIGHTNING_2509) ? EDIT_LIGHTNING_2509 : r.file;
+}
 
 export function buildEditGraph(p: EditParams): Record<string, unknown> {
   if (!p.images.length || p.images.length > 3) throw new Error('Edit takes 1 to 3 images');
   const draft = p.quality === 'draft';
   const steps = p.steps ?? (draft ? 8 : 20);
   const g: Record<string, unknown> = {
-    u: { class_type: 'UNETLoader', inputs: { unet_name: EDIT_MODEL, weight_dtype: 'default' } },
-    c: { class_type: 'CLIPLoader', inputs: { clip_name: EDIT_ENCODER, type: 'qwen_image', device: 'default' } },
-    v: { class_type: 'VAELoader', inputs: { vae_name: EDIT_VAE } },
+    u: { class_type: 'UNETLoader', inputs: { unet_name: slotFile('qwen.editModel'), weight_dtype: 'default' } },
+    c: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('qwen.textEncoder'), type: 'qwen_image', device: 'default' } },
+    v: { class_type: 'VAELoader', inputs: { vae_name: slotFile('qwen.vae') } },
     norm: { class_type: 'CFGNorm', inputs: { model: ['ms', 0], strength: 1 } },
   };
   // LoRA chain: extras first, then Lightning for draft.
@@ -80,7 +86,7 @@ export function buildEditGraph(p: EditParams): Record<string, unknown> {
     model = [`lora${i + 1}`, 0];
   });
   if (draft) {
-    g.lora = { class_type: 'LoraLoaderModelOnly', inputs: { model, lora_name: p.lightning ?? EDIT_LIGHTNING, strength_model: 1 } };
+    g.lora = { class_type: 'LoraLoaderModelOnly', inputs: { model, lora_name: p.lightning ?? slotFile('qwen.lightning'), strength_model: 1 } };
     model = ['lora', 0];
   }
   g.ms = { class_type: 'ModelSamplingAuraFlow', inputs: { model, shift: 3 } };

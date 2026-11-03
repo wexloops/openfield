@@ -21,9 +21,8 @@ export { sheetLayout, type SheetLayout, type SheetMember, type SheetTile } from 
 import {
   LTX25_FPS, NEGATIVE, snap64, snapFrames,
 } from './ltx25.js';
-import { ltx25Files } from './ltxfiles.js';
+import { slotFile } from './slots.js';
 
-export const INGREDIENTS_LORA = 'ltx-2.5-22b-ic-lora-ingredients-0.9.safetensors';
 /** The example workflow's strength. The 2.3 card says 1.4, the 2.5 table 1.0. */
 export const INGREDIENTS_STRENGTH = 1.3;
 /** The trained bucket (768x448) lives in src/castSheet.ts. Other sizes run, but drift from what the LoRA learned. */
@@ -97,11 +96,11 @@ export function buildCastVideoGraph(p: CastVideoParams): Record<string, unknown>
   const layout = W === p.layout.width && H === p.layout.height ? p.layout : { ...p.layout, width: W, height: H };
 
   const g: Record<string, unknown> = {
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
-    icl: { class_type: 'LTXICLoRALoaderModelOnly', inputs: { model: ['unet', 0], lora_name: INGREDIENTS_LORA, strength_model: p.strength ?? INGREDIENTS_STRENGTH } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' } },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: slotFile('ltx25.transformer'), weight_dtype: 'default' } },
+    icl: { class_type: 'LTXICLoRALoaderModelOnly', inputs: { model: ['unet', 0], lora_name: slotFile('ltx25-loras.cast'), strength_model: p.strength ?? INGREDIENTS_STRENGTH } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('ltx25.textEncoder'), type: 'ltxv', device: 'default' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.videoVae') } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.audioVae') } },
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.prompt } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative ?? `${NEGATIVE}, worst quality, inconsistent motion, blurry, jittery, distorted` } },
     cond: { class_type: 'LTXVConditioning', inputs: { positive: ['pos', 0], negative: ['neg', 0], frame_rate: fps } },
