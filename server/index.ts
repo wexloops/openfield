@@ -42,6 +42,7 @@ import { buildCastVideoGraph } from './graphs/cast.js';
 import { imageDims, saveToProject, safeShotName } from './files.js';
 import { transcribe } from './whisper.js';
 import { bundlesFor } from './models.js';
+import { modelsUnloaded } from './modelSwitch.js';
 import { blockingReason, clearPreflightCache, effectBlockingReason, preflight } from './preflight.js';
 import { effectById, effectPrompt } from '../src/effects.js';
 import { closePhoneSession, openPhoneSession, phoneSession } from './phone.js';
@@ -2159,6 +2160,7 @@ app.post('/api/free', async (_req, reply) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ unload_models: true, free_memory: true }),
   }).catch(() => null);
+  modelsUnloaded();
   return { ok: true };
 });
 
