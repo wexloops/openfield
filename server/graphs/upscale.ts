@@ -16,8 +16,9 @@
  * the source has a track.
  */
 import {
-  AUDIO_VAE, NEGATIVE, SIGMAS_REFINE, TEXT_ENCODER, TRANSFORMER, UPSCALER, VIDEO_VAE,
+  NEGATIVE, SIGMAS_REFINE, UPSCALER,
 } from './ltx25.js';
+import { ltx25Files } from './ltxfiles.js';
 
 type Graph = Record<string, unknown>;
 type Link = [string, number];
@@ -258,10 +259,10 @@ export function buildDreamGraph(p: DreamParams): Graph {
   const baseW = p.width / 2;
   const baseH = p.height / 2;
   Object.assign(g, {
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: TRANSFORMER, weight_dtype: 'default' } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: TEXT_ENCODER, type: 'ltxv', device: 'default' } },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: VIDEO_VAE } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: AUDIO_VAE } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
 
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.prompt } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative ?? NEGATIVE } },

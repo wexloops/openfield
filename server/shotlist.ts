@@ -114,13 +114,22 @@ export function parseShotList(text: string, max = SCENE_MAX_SHOTS): SceneShot[] 
       } catch { /* next */ }
     }
   }
-  // Field by field: each {...} block that names an action.
+  const out = partialShots(body, max);
+  return out.length >= SCENE_MIN_SHOTS ? out : null;
+}
+
+/**
+ * Field by field: every complete {...} block that names an action. Also reads
+ * the shots of a reply that is still being written or broke off: a shot counts
+ * once its closing brace is there. Returns 0..max shots.
+ */
+export function partialShots(text: string, max = SCENE_MAX_SHOTS): SceneShot[] {
+  const body = text.replace(/```(?:json)?/gi, '');
   const field = (blk: string, k: string) => new RegExp(`"?${k}"?\\s*:?\\s*"([^"]*)"`, 'i').exec(blk)?.[1];
   const num = (blk: string, k: string) => new RegExp(`"?${k}"?\\s*:?\\s*"?(\\d+)`, 'i').exec(blk)?.[1];
   const blocks = body.match(/\{[^{}]*\}/g) ?? [];
   const loose = blocks.map((blk) => ({ framing: field(blk, 'framing'), move: field(blk, 'move'), action: field(blk, 'action'), seconds: num(blk, 'seconds') }));
-  const out = normalize(loose as Record<string, unknown>[], max);
-  return out.length >= SCENE_MIN_SHOTS ? out : null;
+  return normalize(loose as Record<string, unknown>[], max);
 }
 
 /**

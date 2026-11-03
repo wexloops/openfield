@@ -6,6 +6,7 @@
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { BUNDLES, bundleGb } from '../server/models.js';
+import { LTX25_ENV, LTX25_STOCK, type Ltx25Slot } from '../server/graphs/ltxfiles.js';
 import { ROOT } from '../server/config.js';
 
 // Shared files (the edit bundle reuses qwen's encoder, VAE and LoRA) count once.
@@ -65,6 +66,41 @@ for (const b of BUNDLES) {
 
 lines.push('🔒 = gated repo. Open the model page, accept the license, then set `HF_TOKEN`.');
 lines.push('');
+
+// The four LTX-2.5 slots and their variables come from server/graphs/ltxfiles.ts.
+const ltx = BUNDLES.find((b) => b.id === 'ltx25')!;
+const dirOf = (file: string) => ltx.files.find((f) => f.file === file)!.dir;
+lines.push(
+  '## Other LTX-2.5 weights',
+  '',
+  'Every LTX-2.5 app loads the same four files. Each one can be swapped for another',
+  'file, for example a fine-tune or a different quantization of LTX-2.5, by setting',
+  'its variable in `.env`:',
+  '',
+  '| Variable | Replaces | Folder |',
+  '| --- | --- | --- |',
+  ...(Object.keys(LTX25_STOCK) as Ltx25Slot[]).map(
+    (s) => `| \`${LTX25_ENV[s]}\` | \`${LTX25_STOCK[s]}\` | \`models/${dirOf(LTX25_STOCK[s])}/\` |`,
+  ),
+  '',
+  'The value is the name exactly as ComfyUI lists it in that loader. A file in a',
+  'subfolder keeps the subfolder, and ComfyUI on Windows writes it with a backslash:',
+  '',
+  '```',
+  'OPENFIELD_LTX25_TRANSFORMER=ltx25\\my-ltx25-finetune-fp8.safetensors',
+  '```',
+  '',
+  'Restart OpenField after a change. Setup and `npm run doctor` then check for the',
+  'configured file in place of the stock one, and `npm run models` never downloads',
+  'a configured file: put it in the folder yourself. Variables left unset keep the',
+  'stock file. The latent upscaler is not configurable.',
+  '',
+  'Use weights that keep the LTX-2.5 architecture: the graphs, step counts and',
+  'IC-LoRAs (Effects, Mirror, Reshoot, Cast, Stage, HDR) are made for the stock',
+  'distilled model. A model with LoRAs merged in can behave differently under those',
+  'IC-LoRAs; try each app you use. `npm run workflows` always writes the stock names.',
+  '',
+);
 
 writeFileSync(join(ROOT, 'docs', 'MODELS.md'), lines.join('\n'));
 console.log('docs/MODELS.md written');

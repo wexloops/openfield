@@ -29,11 +29,8 @@
  * real and half generated.
  */
 import { LTX25_FPS, snapFrames } from './ltx25.js';
+import { ltx25Files } from './ltxfiles.js';
 
-const TRANSFORMER = 'ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors';
-const TEXT_ENCODER = 'gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors';
-const VIDEO_VAE = 'ltx-2.5-video-vae-bf16.safetensors';
-const AUDIO_VAE = 'ltx-2.5-audio-vae-bf16.safetensors';
 const UPSCALER = 'ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors';
 const NEGATIVE = 'pc game, console game, video game, cartoon, childish, ugly, blurry, low quality, text, watermark';
 const SIGMAS = '1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0';
@@ -52,10 +49,10 @@ const r4 = (n: number) => Math.round(n * 10000) / 10000;
 /** Loaders, prompt conditioning and the distilled sampler pieces every tool shares. */
 function base(g: Graph, prompt: string, negative: string | undefined, fps: number, seed: number) {
   Object.assign(g, {
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: TRANSFORMER, weight_dtype: 'default' } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: TEXT_ENCODER, type: 'ltxv', device: 'default' } },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: VIDEO_VAE } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: AUDIO_VAE } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: prompt } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: negative || NEGATIVE } },
     cond: { class_type: 'LTXVConditioning', inputs: { positive: ['pos', 0], negative: ['neg', 0], frame_rate: fps } },

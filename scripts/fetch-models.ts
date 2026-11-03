@@ -14,11 +14,14 @@
  * Downloads run through curl with resume (-C -) into <file>.part, renamed
  * into place only when curl finishes, so an interrupted 21GB pull picks up
  * where it stopped and is never mistaken for a finished file.
+ *
+ * An LTX-2.5 file replaced through OPENFIELD_LTX25_* (server/graphs/ltxfiles.ts)
+ * is checked for under its configured name and never downloaded.
  */
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync, renameSync, statSync } from 'fs';
 import { join } from 'path';
-import { BUNDLES, bundleGb, type Bundle, type ModelFile } from '../server/models.js';
+import { activeBundles, bundleGb, type Bundle, type ModelFile } from '../server/models.js';
 import { config } from '../server/config.js';
 import { getStatus } from '../server/comfy.js';
 import { preflight } from '../server/preflight.js';
@@ -33,6 +36,9 @@ const valueOf = (f: string): string | undefined => {
 const DEST = valueOf('--dest') || config.comfyModelsDir;
 const TOKEN = process.env.HF_TOKEN || '';
 const DRY = has('--dry-run');
+// The manifest with any OPENFIELD_LTX25_* file in place of the stock one it
+// replaces: such a file is checked for, never downloaded.
+const BUNDLES = activeBundles();
 
 const c = {
   dim: (s: string) => `\x1b[2m${s}\x1b[0m`,
@@ -59,7 +65,8 @@ function selectedBundles(): Bundle[] {
   return BUNDLES.filter((b) => !b.optional);
 }
 
-const target = (f: ModelFile) => join(DEST, f.dir, f.file);
+// A configured name may carry a subfolder, with either slash.
+const target = (f: ModelFile) => join(DEST, f.dir, ...f.file.split(/[\\/]/));
 
 /** On disk under DEST, and not a zero-length stub from a failed run. */
 const onDisk = (f: ModelFile) => !!DEST && existsSync(target(f)) && statSync(target(f)).size > 0;
@@ -121,7 +128,7 @@ async function list(): Promise<void> {
     const state = missing.length === 0 ? c.ok(' OK  ') : c.bad('MISS ');
     console.log(`${state} ${c.bold(b.id.padEnd(10))} ${b.label}  ${c.dim(`${bundleGb(b)} GB${b.optional ? ' · optional' : ''}`)}`);
     if (b.licenseWarning) console.log(`       ${c.warn(b.licenseWarning)}`);
-    for (const f of missing) console.log(c.dim(`       missing  models/${f.dir}/${f.file}`));
+    for (const f of missing) console.log(c.dim(`       missing  models/${f.dir}/${f.file}${f.override ? `  (set by ${f.override})` : ''}`));
     for (const n of packsOf([b])) console.log(c.dim(`       needs custom nodes: ${n.pack}  ${n.url}`));
   }
   console.log('');
@@ -176,8 +183,11 @@ async function main(): Promise<void> {
   // Bundles share files (the edit bundle reuses the qwen encoder, VAE and
   // LoRA); fetch each file once.
   const wanted = [...new Map(bundles.flatMap((b) => b.files).map((f) => [`${f.dir}/${f.file}`, f])).values()];
-  const todo = wanted.filter((f) => !check.has(f));
-  const skipped = wanted.length - todo.length;
+  const absent = wanted.filter((f) => !check.has(f));
+  // A file set by an OPENFIELD_LTX25_* variable has no download source here.
+  const configured = absent.filter((f) => f.override);
+  const todo = absent.filter((f) => !f.override);
+  const skipped = wanted.length - absent.length;
 
   console.log(`\n${c.bold('OpenField models')} → ${DEST}`);
   console.log(`Bundles: ${bundles.map((b) => b.id).join(', ')}`);
@@ -191,7 +201,15 @@ async function main(): Promise<void> {
     console.log(c.warn(`[${n.bundles.join(', ')}] also needs the ${n.pack} custom nodes: ${n.url}`));
   }
 
+  for (const f of configured) {
+    console.log(c.warn(`Not found: models/${f.dir}/${f.file}, set by ${f.override}. It is not downloaded; put it there, or fix the name in .env.`));
+  }
+
   if (!todo.length) {
+    if (configured.length) {
+      console.log(c.bad(`\nNothing to download, but ${configured.length} configured file(s) are missing (above).\n`));
+      process.exit(1);
+    }
     console.log(c.ok('\nNothing to download — every file for these bundles is already in place.\n'));
     return;
   }
@@ -207,6 +225,10 @@ async function main(): Promise<void> {
   if (failed.length) {
     console.error(c.bad(`\n${failed.length} file(s) failed: ${failed.map((f) => f.file).join(', ')}`));
     console.error('Re-run the same command to resume — completed files are skipped.\n');
+    process.exit(1);
+  }
+  if (configured.length) {
+    console.log(c.bad(`\nDownloads done, but ${configured.length} configured file(s) are still missing (listed before the downloads).\n`));
     process.exit(1);
   }
   console.log(c.ok(`\nDone. Restart ComfyUI so it rescans its model folders, then re-check in OpenField.\n`));
