@@ -78,7 +78,7 @@ if (status.up) {
   if (ready.length) pass('Models', `ready: ${ready.map((b) => b.id).join(', ')}`);
   for (const b of core.filter((x) => !x.ready)) {
     fail(`Models · ${b.id}`, `${b.missingFiles.length} file(s) missing`);
-    for (const f of b.missingFiles) console.log(c.dim(`       models/${f.dir}/${f.file}`));
+    for (const f of b.missingFiles) console.log(c.dim(`       models/${f.dir}/${f.file}${f.override ? `  (set by ${f.override} in .env; not downloaded)` : ''}`));
   }
   const optMissing = bundles.filter((b) => b.optional && !b.ready);
   if (optMissing.length) {

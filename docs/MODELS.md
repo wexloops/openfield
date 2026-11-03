@@ -368,3 +368,33 @@ The older LTX engine, kept because it is the playground for community fine-tunes
 | `ltx-2.3-spatial-upscaler-x2-1.1.safetensors` | `models/latent_upscale_models/` | 1 GB | [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3/blob/main/ltx-2.3-spatial-upscaler-x2-1.1.safetensors) |
 
 🔒 = gated repo. Open the model page, accept the license, then set `HF_TOKEN`.
+
+## Other LTX-2.5 weights
+
+Every LTX-2.5 app loads the same four files. Each one can be swapped for another
+file, for example a fine-tune or a different quantization of LTX-2.5, by setting
+its variable in `.env`:
+
+| Variable | Replaces | Folder |
+| --- | --- | --- |
+| `OPENFIELD_LTX25_TRANSFORMER` | `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors` | `models/diffusion_models/` |
+| `OPENFIELD_LTX25_TEXT_ENCODER` | `gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors` | `models/text_encoders/` |
+| `OPENFIELD_LTX25_VIDEO_VAE` | `ltx-2.5-video-vae-bf16.safetensors` | `models/vae/` |
+| `OPENFIELD_LTX25_AUDIO_VAE` | `ltx-2.5-audio-vae-bf16.safetensors` | `models/vae/` |
+
+The value is the name exactly as ComfyUI lists it in that loader. A file in a
+subfolder keeps the subfolder, and ComfyUI on Windows writes it with a backslash:
+
+```
+OPENFIELD_LTX25_TRANSFORMER=ltx25\my-ltx25-finetune-fp8.safetensors
+```
+
+Restart OpenField after a change. Setup and `npm run doctor` then check for the
+configured file in place of the stock one, and `npm run models` never downloads
+a configured file: put it in the folder yourself. Variables left unset keep the
+stock file. The latent upscaler is not configurable.
+
+Use weights that keep the LTX-2.5 architecture: the graphs, step counts and
+IC-LoRAs (Effects, Mirror, Reshoot, Cast, Stage, HDR) are made for the stock
+distilled model. A model with LoRAs merged in can behave differently under those
+IC-LoRAs; try each app you use. `npm run workflows` always writes the stock names.

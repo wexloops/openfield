@@ -20,7 +20,7 @@
  * folder under `openfield/hdr/<tag>_*`; the server collects them from there.
  * The template's bypassed LTXVImgToVideoInplace (a no-op) is left out.
  */
-import { TRANSFORMER, VIDEO_VAE, AUDIO_VAE } from './ltx25.js';
+import { ltx25Files } from './ltxfiles.js';
 
 export const HDR_LORA = 'ltx-2.5-22b-ic-lora-sdr-to-hdr-1.0.safetensors';
 export const HDR_SCENE_EMB = 'ltx-2.5-22b-ic-lora-sdr-to-hdr-scene-emb.safetensors';
@@ -81,10 +81,10 @@ export function buildHdrGraph(p: HdrParams): Record<string, unknown> {
     rate: { class_type: 'ComfyMathExpression', inputs: { expression: 'a if a <= 30 else 30', 'values.a': ['parts', 2] } },
 
     // ---- loaders ----
-    avae: { class_type: 'VAELoader', inputs: { vae_name: AUDIO_VAE } },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: VIDEO_VAE } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
     vae32: { class_type: 'LTXVVAEForceFloat32', inputs: { vae: ['vvae', 0] } },
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: TRANSFORMER, weight_dtype: 'default' } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
     icl: { class_type: 'LTXICLoRALoaderModelOnly', inputs: { model: ['unet', 0], lora_name: HDR_LORA, strength_model: 1 } },
 
     // ---- conditioning: fixed scene embeddings, no prompt ----

@@ -11,6 +11,7 @@
  * framing, or the guide fights it and the shot dissolves.
  */
 import { snapFrames } from './ltx25.js';
+import { ltx25Files } from './ltxfiles.js';
 
 export type MirrorControl = 'pose' | 'depth' | 'edges';
 
@@ -30,10 +31,6 @@ export interface MirrorParams {
 }
 
 export const MIRROR_LORA = 'ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors';
-const TRANSFORMER = 'ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors';
-const TEXT_ENCODER = 'gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors';
-const VIDEO_VAE = 'ltx-2.5-video-vae-bf16.safetensors';
-const AUDIO_VAE = 'ltx-2.5-audio-vae-bf16.safetensors';
 const SIGMAS = '1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0';
 const NEGATIVE = 'stick figure, skeleton, colored lines, wireframe, blurry, low quality, text, watermark';
 const FPS = 24;
@@ -47,12 +44,12 @@ export function buildMirrorGraph(p: MirrorParams): Record<string, unknown> {
   const frames = snapFrames(p.seconds, FPS);
 
   const g: Record<string, any> = {
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: TRANSFORMER, weight_dtype: 'default' } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
     lora: { class_type: 'LoraLoaderModelOnly', inputs: { model: ['unet', 0], lora_name: MIRROR_LORA, strength_model: 1.0 } },
     icp: { class_type: 'GetICLoRAParameters', inputs: { iclora_model: ['lora', 0] } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: TEXT_ENCODER, type: 'ltxv' } },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: VIDEO_VAE } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: AUDIO_VAE } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.prompt } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative ?? NEGATIVE } },
     cond: { class_type: 'LTXVConditioning', inputs: { positive: ['pos', 0], negative: ['neg', 0], frame_rate: FPS } },
