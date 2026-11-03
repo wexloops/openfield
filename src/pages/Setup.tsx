@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api, type BundleStatus } from '../api';
 import { useStore } from '../store';
-import { RenderTierPicker } from '../ui';
+import { RenderTierPicker, VideoDecodePicker } from '../ui';
 
 export default function Setup() {
   const [bundles, setBundles] = useState<BundleStatus[] | null>(null);
@@ -24,6 +24,7 @@ export default function Setup() {
             <dt>Comfy API v2</dt><dd>{st?.api ? 'answering' : 'not answering'}</dd>
             <dt>GPU</dt><dd>{st?.gpu ?? 'unknown'}{st?.vramTotalGb ? ` · ${(st.vramTotalGb * 1e9 / 2 ** 30).toFixed(0)} GB` : ''}</dd>
             <dt>Render size</dt><dd><RenderTierPicker /><div className="dim" style={{ fontSize: 12, marginTop: 4 }}>Every video app starts here and keeps its own size chip. Past 720p, use Upscale.</div></dd>
+            <dt>Video decode</dt><dd><VideoDecodePicker /></dd>
             <dt>Get models</dt><dd className="mono">npm run models</dd>
             <dt>Check install</dt><dd className="mono">npm run doctor</dd>
           </dl>
@@ -45,7 +46,7 @@ export default function Setup() {
               {b.licenseWarning && <div style={{ color: 'var(--accent)', fontSize: 12.5 }}>{b.licenseWarning}</div>}
               {!b.ready && (
                 <div className="compiled">
-                  {b.missingFiles.map((f) => <div key={f.file}>models/{f.dir}/{f.file}  ← {f.repo}{f.gated ? ' (gated: accept the license on Hugging Face first)' : ''}</div>)}
+                  {b.missingFiles.map((f) => <div key={f.file}>models/{f.dir}/{f.file}  ← {f.override ? `set by ${f.override} in .env (not downloaded)` : `${f.repo}${f.gated ? ' (gated: accept the license on Hugging Face first)' : ''}`}</div>)}
                   {b.missingNodes.map((n) => <div key={n.class}>custom nodes: {n.pack}  ← {n.url}</div>)}
                 </div>
               )}

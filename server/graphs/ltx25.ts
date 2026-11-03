@@ -18,6 +18,8 @@
  *   - euler_ancestral in both passes.
  */
 
+import { ltx25Files } from './ltxfiles.js';
+
 export type Ltx25Mode = 't2v' | 'i2v' | 'flf2v';
 
 export interface Ltx25Params {
@@ -90,10 +92,6 @@ export function withTriggers(prompt: string, loras: Ltx25Lora[]): string {
   return out;
 }
 
-export const TRANSFORMER = 'ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors';
-export const TEXT_ENCODER = 'gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors';
-export const VIDEO_VAE = 'ltx-2.5-video-vae-bf16.safetensors';
-export const AUDIO_VAE = 'ltx-2.5-audio-vae-bf16.safetensors';
 export const UPSCALER = 'ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors';
 
 export const NEGATIVE = 'pc game, console game, video game, cartoon, childish, ugly';
@@ -151,14 +149,14 @@ export function buildLtx25Graph(p: Ltx25Params): Record<string, unknown> {
     // ---- loaders (all standalone in 2.5) ----
     unet: {
       class_type: 'UNETLoader',
-      inputs: { unet_name: p.transformer ?? TRANSFORMER, weight_dtype: 'default' },
+      inputs: { unet_name: p.transformer ?? ltx25Files().transformer, weight_dtype: 'default' },
     },
     clip: {
       class_type: 'CLIPLoader',
-      inputs: { clip_name: TEXT_ENCODER, type: 'ltxv', device: 'default' },
+      inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' },
     },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: VIDEO_VAE } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: AUDIO_VAE } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
 
     // ---- conditioning ----
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: prompt } },

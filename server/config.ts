@@ -11,6 +11,7 @@ import { homedir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { parseTier } from '../src/renderTier.js';
+import { parseVideoDecode } from '../src/videoDecode.js';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -121,6 +122,12 @@ export const config = {
    * Unset = from the GPU (24 GB or more renders at 720p, smaller cards at 480p).
    */
   renderTier: parseTier(process.env.OPENFIELD_RENDER_TIER),
+
+  /**
+   * Video decode when Setup has no choice: whole (one call over the clip) or
+   * chunked (64 frames at a time). Unset = from the GPU (AMD = chunked).
+   */
+  videoDecode: parseVideoDecode(process.env.OPENFIELD_VIDEO_DECODE),
 
   /** Serve the built UI from the sidecar (`npm start` passes --production; NODE_ENV=production works too). */
   serveStatic: process.env.NODE_ENV === 'production' || process.argv.includes('--production'),

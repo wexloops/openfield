@@ -18,7 +18,7 @@ import { buildH3Graph, snapH3Length, turboProblem } from './graphs/h3.js';
 import { buildLtxGraph } from './graphs/ltx.js';
 import { buildLtx25Graph, ltx25EffectiveSize, ltx25Mode, LTX25_FPS, snapFrames } from './graphs/ltx25.js';
 import { applyPost } from './graphs/director.js';
-import { advance, cleanScene, getPlan, initScenes, postBlockingReason, shootScene, shotsOf, startPlan, waitingCuts } from './scene.js';
+import { advance, cleanScene, getPlan, initScenes, plannerReasoningOverride, postBlockingReason, shootScene, shotsOf, startPlan, waitingCuts } from './scene.js';
 import { buildStillsGraph } from './graphs/stills.js';
 import { listUserLoras, pickLoras, type LoraFamily } from './loras.js';
 import { buildDreamGraph, buildRedrawGraph, buildSharpenGraph, redrawBatch, type UpscaleSource } from './graphs/upscale.js';
@@ -42,6 +42,7 @@ import { buildCastVideoGraph } from './graphs/cast.js';
 import { imageDims, saveToProject, safeShotName } from './files.js';
 import { transcribe } from './whisper.js';
 import { bundlesFor } from './models.js';
+import { modelsUnloaded } from './modelSwitch.js';
 import { blockingReason, clearPreflightCache, effectBlockingReason, preflight } from './preflight.js';
 import { effectById, effectPrompt } from '../src/effects.js';
 import { closePhoneSession, openPhoneSession, phoneSession } from './phone.js';
@@ -53,8 +54,10 @@ import { collectHdr } from './hdr.js';
 import { buildStageLookGraph, buildStageShotGraph, lookEditInstruction, lookPrompt } from './graphs/stage.js';
 import { checkSize, ingestBlocking, rasterBlocking, stageLookFrame } from './stage.js';
 import { cleanStageScene, lookSize, stageTier } from '../src/stage.js';
-import { appTier, isRenderTier, parseTier, tierSizeOf, type TierApp } from '../src/renderTier.js';
+import { appTier, isRenderTier, parseTier, tierSizeOf, type RenderTier, type TierApp } from '../src/renderTier.js';
 import { currentTier, setTier, tierState } from './renderTier.js';
+import { isVideoDecode, type VideoDecode } from '../src/videoDecode.js';
+import { setVideoDecode, videoDecodeState } from './videoDecode.js';
 import { MIN_PASSWORD, installJudge, type JudgeState } from './judge.js';
 import { estimate } from './estimate.js';
 
@@ -228,7 +231,7 @@ app.get('/live', { websocket: true }, (conn) => {
 // ---------- API ----------
 
 app.get('/api/status', async () => {
-  const [st, api, renderTier] = await Promise.all([comfy.getStatus(), eng.apiUp(), tierState()]);
+  const [st, api, renderTier, videoDecode] = await Promise.all([comfy.getStatus(), eng.apiUp(), tierState(), videoDecodeState()]);
   return {
     ...st,
     // Cloud target: the local ComfyUI server is irrelevant, the v2 API is the engine.
@@ -239,19 +242,29 @@ app.get('/api/status', async () => {
     canLaunch: comfy.canLaunchEngine(),
     comfyUrl: config.comfyUrl,
     renderTier,
+    videoDecode,
+    // OPENFIELD_LLM_REASONING overrides the Director's "Think first" switch; the page shows it as set by the server.
+    plannerReasoning: plannerReasoningOverride(),
     judge: judgeState?.(),
   };
 });
 
-/** Machine-wide settings. renderTier: the video render size; source says where it came from. */
-app.get('/api/settings', async () => ({ renderTier: await tierState() }));
+/**
+ * Machine-wide settings; each state says where its value came from.
+ * renderTier: the video render size. videoDecode: whole-clip or chunked video decode.
+ */
+app.get('/api/settings', async () => ({ renderTier: await tierState(), videoDecode: await videoDecodeState() }));
 app.put('/api/settings', async (req, reply) => {
-  const b = (req.body ?? {}) as { renderTier?: unknown };
-  if ('renderTier' in b) {
-    if (b.renderTier !== null && !isRenderTier(b.renderTier)) return reply.code(400).send({ error: 'renderTier is 480p, 720p, 1080p, or null for the default' });
-    setTier(b.renderTier);
+  const b = (req.body ?? {}) as { renderTier?: unknown; videoDecode?: unknown };
+  if ('renderTier' in b && b.renderTier !== null && !isRenderTier(b.renderTier)) {
+    return reply.code(400).send({ error: 'renderTier is 480p, 720p, 1080p, or null for the default' });
   }
-  return { renderTier: await tierState() };
+  if ('videoDecode' in b && b.videoDecode !== null && !isVideoDecode(b.videoDecode)) {
+    return reply.code(400).send({ error: 'videoDecode is whole, chunked, or null for the default' });
+  }
+  if ('renderTier' in b) setTier(b.renderTier as RenderTier | null);
+  if ('videoDecode' in b) setVideoDecode(b.videoDecode as VideoDecode | null);
+  return { renderTier: await tierState(), videoDecode: await videoDecodeState() };
 });
 
 app.post('/api/upload', async (req, reply) => {
@@ -1339,10 +1352,10 @@ initScenes({ queueTakes, broadcast, recordWorkflow, probeMedia });
 
 /** Start planning a scene into shots. Poll GET /api/director/plan/:id. */
 app.post('/api/director/plan', async (req, reply) => {
-  const b = (req.body ?? {}) as { scene?: string; shots?: number; planner?: string; seed?: number };
+  const b = (req.body ?? {}) as { scene?: string; shots?: number; planner?: string; seed?: number; think?: boolean };
   const scene = String(b.scene ?? '').trim();
   if (!scene) return reply.code(400).send({ error: 'Write the scene first' });
-  return startPlan(scene, { shots: Number(b.shots) || undefined, planner: b.planner, seed: Number.isFinite(b.seed) ? Number(b.seed) : undefined });
+  return startPlan(scene, { shots: Number(b.shots) || undefined, planner: b.planner, seed: Number.isFinite(b.seed) ? Number(b.seed) : undefined, think: b.think === true });
 });
 
 app.get('/api/director/plan/:id', async (req, reply) => {
@@ -2139,6 +2152,7 @@ app.post('/api/free', async (_req, reply) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ unload_models: true, free_memory: true }),
   }).catch(() => null);
+  modelsUnloaded();
   return { ok: true };
 });
 

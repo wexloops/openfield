@@ -12,6 +12,10 @@
     "start": "tsx server/index.ts --production",
     "test:judge": "tsx scripts/test-judge.ts",
     "test:h3-turbo": "tsx scripts/test-h3-turbo.ts",
+    "test:video-decode": "tsx scripts/test-video-decode.ts",
+    "test:model-switch": "tsx scripts/test-model-switch.ts",
+    "test:ltxfiles": "tsx scripts/test-ltxfiles.ts",
+    "test:llm-planner": "tsx scripts/test-llm-planner.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p server/tsconfig.json && tsc -p mcp/tsconfig.json",
     "models": "tsx scripts/fetch-models.ts",
     "doctor": "tsx scripts/doctor.ts",
@@ -21,6 +25,7 @@
     "mcp": "tsx mcp/server.ts",
     "mcp:smoke": "tsx mcp/smoke.ts",
     "mcp:check": "tsx mcp/bodies.check.ts",
+    "shotlist:check": "tsx scripts/check-shotlist.ts",
     "workflows": "tsx scripts/export-workflows.ts"
   },
   "dependencies": {
