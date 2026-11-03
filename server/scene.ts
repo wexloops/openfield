@@ -3,7 +3,8 @@
  *
  *   plan     the shot list from a local LLM. First the engine itself
  *            (TextGenerateLTX2Prompt on the Gemma 3 12B encoder, see
- *            ./graphs/director.ts), then Ollama when it answers on this
+ *            ./graphs/director.ts), then an OpenAI-compatible server when
+ *            OPENFIELD_LLM_URL names one, then Ollama when it answers on this
  *            machine, then a plain sentence split so a scene always plans.
  *            Runs as a background job the client polls; a busy GPU queue can
  *            hold the engine planner for minutes.
@@ -29,7 +30,7 @@ import { config } from './config.js';
 import { cast as castDb, takes, type Take } from './jobs.js';
 import { castHeroFrame, mentioned } from './cast.js';
 import { buildCutGraph, buildPlannerGraph, PLANNER_ENCODER, PLANNER_SYSTEM, type CutClip } from './graphs/director.js';
-import { parseShotList, snapFraming, snapMove, snapSeconds, splitScene } from './shotlist.js';
+import { parseShotList, partialShots, snapFraming, snapMove, snapSeconds, splitScene } from './shotlist.js';
 import {
   DIRECTOR_MOVES, SCENE_FRAMINGS, SCENE_MAX_SHOTS, SCENE_MIN_SHOTS, clampEra, directorDirection, isRamp, presetById, shotPrompt,
   type RampId, type SceneShot,
@@ -78,7 +79,7 @@ export async function postBlockingReason(b: { era?: unknown; eraGrade?: unknown;
 
 // ---------------------------------------------------------------- plan
 
-export type Planner = 'engine' | 'ollama' | 'split';
+export type Planner = 'engine' | 'llm' | 'ollama' | 'split';
 export interface Plan {
   id: string;
   status: 'running' | 'done' | 'failed';
@@ -90,12 +91,34 @@ export interface Plan {
   raw?: string;
   seconds?: number;
   error?: string;
+  /** While running: the planner at work and its model. */
+  stage?: Planner;
+  model?: string;
+  /** While running: waiting for the first word, thinking, or writing the shot list. */
+  phase?: 'waiting' | 'thinking' | 'writing';
+  /** While running: the shots written so far (streaming planners only). */
+  partial?: SceneShot[];
 }
+type PlanProgress = (u: Pick<Plan, 'model' | 'phase' | 'partial'>) => void;
 const plans = new Map<string, Plan>();
 export const getPlan = (id: string) => plans.get(id);
 
 const OLLAMA = (process.env.OPENFIELD_OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 const OLLAMA_MODELS = (process.env.OPENFIELD_OLLAMA_MODEL || 'gpt-oss:20b,qwen3:30b,qwen3:8b,gemma3:12b').split(',').map((s) => s.trim()).filter(Boolean);
+/** An OpenAI-compatible server (llama.cpp, LM Studio, vLLM, ...): its base URL up to and including /v1. Unset = not used. */
+const LLM = (process.env.OPENFIELD_LLM_URL || '').trim().replace(/\/+$/, '');
+const LLM_MODEL = (process.env.OPENFIELD_LLM_MODEL || '').trim();
+const LLM_KEY = (process.env.OPENFIELD_LLM_KEY || '').trim();
+/**
+ * Overrides the Director's "Think first" switch for the LLM server: sent as `reasoning_effort` on every plan
+ * (e.g. "none" switches a thinking model's reasoning off on LM Studio). Unset = the switch decides.
+ */
+const LLM_REASONING = (process.env.OPENFIELD_LLM_REASONING || '').trim();
+/** The server-side override of the "Think first" switch, for the UI to show; null when the switch decides. */
+export const plannerReasoningOverride = (): string | null => (LLM && LLM_REASONING) || null;
+/** How long the LLM may stay silent (a server that hides the model's thinking says nothing until the list), and run in all. */
+const LLM_IDLE = 300_000;
+const LLM_TOTAL = 900_000;
 
 function systemPrompt(want: number): string {
   const n = want ? { min: want, max: want } : { min: SCENE_MIN_SHOTS, max: 4 };
@@ -120,8 +143,8 @@ async function planOnEngine(scene: string, want: number, seed: number): Promise<
   throw new Error('the engine planner timed out (the GPU queue is busy)');
 }
 
-/** Ask a local Ollama, if one answers. Optional: OpenField never needs it. */
-async function planOnOllama(scene: string, want: number): Promise<string> {
+/** Ask a local Ollama, if one answers. Optional: OpenField never needs it. `think` lets a thinking model reason first. */
+async function planOnOllama(scene: string, want: number, think: boolean): Promise<string> {
   const tags = await fetch(`${OLLAMA}/api/tags`, { signal: AbortSignal.timeout(2000) }).then((r) => r.json() as Promise<{ models?: { name: string }[] }>);
   const names = new Set((tags.models ?? []).map((m) => m.name));
   const model = OLLAMA_MODELS.find((m) => names.has(m));
@@ -131,7 +154,7 @@ async function planOnOllama(scene: string, want: number): Promise<string> {
     headers: { 'Content-Type': 'application/json' },
     signal: AbortSignal.timeout(180_000),
     body: JSON.stringify({
-      model, stream: false, format: 'json', think: false,
+      model, stream: false, format: 'json', think,
       options: { temperature: 0.4 },
       messages: [{ role: 'system', content: systemPrompt(want) }, { role: 'user', content: scene }],
     }),
@@ -139,6 +162,143 @@ async function planOnOllama(scene: string, want: number): Promise<string> {
   if (!r.ok) throw new Error(`Ollama ${model} answered ${r.status}`);
   const d = (await r.json()) as { message?: { content?: string } };
   return `${d.message?.content ?? ''}`;
+}
+
+/** Reasoning models may put their thinking into the content; the shot list follows it. A <think> still open is cut too. */
+const dropThinking = (t: string) => t.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+/** fetch reports a connection the server dropped mid-body as a bare "terminated". */
+const errText = (e: unknown) => {
+  const m = e instanceof Error ? e.message : String(e);
+  return m === 'terminated' ? 'the server closed the connection' : m;
+};
+
+/** The `data:` payloads of a server-sent event stream, up to `[DONE]` or the end of the body. */
+async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  const reader = body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).replace(/\r$/, '');
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') return;
+        if (data) yield data;
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}
+
+/**
+ * Ask the OpenAI-compatible server named by OPENFIELD_LLM_URL. Optional: OpenField never needs it.
+ * Streams where the server can, so the plan reports thinking/writing and each shot as it is written,
+ * and a reply that breaks off still keeps the shots written before it. Without `think` the model is asked
+ * not to reason (reasoning_effort "none"); OPENFIELD_LLM_REASONING, when set, decides instead.
+ */
+async function planOnLlm(scene: string, want: number, think: boolean, progress: PlanProgress): Promise<{ raw: string; note?: string }> {
+  const effort = LLM_REASONING || (think ? '' : 'none');
+  if (!LLM) throw new Error('OPENFIELD_LLM_URL is not set');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (LLM_KEY) headers.Authorization = `Bearer ${LLM_KEY}`;
+  let model = LLM_MODEL;
+  if (!model) {
+    const r = await fetch(`${LLM}/models`, { headers, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) throw new Error(`${LLM}/models answered ${r.status}`);
+    const list = (await r.json()) as { data?: { id?: string }[] };
+    // A server with one model (llama-server) is asked as it is. One that lists several (LM Studio lists
+    // every downloaded model, embedding models too, and loads the one asked for) needs the choice made.
+    const ids = (list.data ?? []).flatMap((m) => (m.id ? [m.id] : []));
+    if (ids.length !== 1) throw new Error(`${LLM}/models lists ${ids.length || 'no'} model${ids.length === 1 ? '' : 's'}; set OPENFIELD_LLM_MODEL`);
+    model = ids[0];
+  }
+  progress({ model, phase: 'waiting' });
+  const max = want || SCENE_MAX_SHOTS;
+  const ctl = new AbortController();
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  const touch = () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => ctl.abort(new Error(`no answer for ${LLM_IDLE / 1000}s`)), LLM_IDLE);
+  };
+  const total = setTimeout(() => ctl.abort(new Error(`no shot list after ${LLM_TOTAL / 1000}s`)), LLM_TOTAL);
+  try {
+    // Streaming, JSON mode and reasoning_effort where the server has them. A server that refuses
+    // a request with a 400 is asked again without one of them, in this order: JSON mode (LM Studio takes
+    // only json_schema or text), reasoning_effort, streaming. One that ignores `stream` answers in one piece.
+    const t = { json: true, reasoning: !!effort, stream: true };
+    let note: string | undefined;
+    let r: Response | undefined;
+    for (;;) {
+      touch();
+      r = await fetch(`${LLM}/chat/completions`, {
+        method: 'POST',
+        headers,
+        signal: ctl.signal,
+        body: JSON.stringify({
+          model, stream: t.stream, temperature: 0.4,
+          ...(t.json ? { response_format: { type: 'json_object' } } : {}),
+          ...(t.reasoning ? { reasoning_effort: effort } : {}),
+          messages: [{ role: 'system', content: systemPrompt(want) }, { role: 'user', content: scene }],
+        }),
+      });
+      if (r.status !== 400) break;
+      await r.body?.cancel().catch(() => {});
+      if (t.json) t.json = false;
+      else if (t.reasoning) {
+        t.reasoning = false;
+        note = `llm: the server refused reasoning_effort "${effort}"; asked without it`;
+      } else if (t.stream) t.stream = false;
+      else break;
+    }
+    if (!r || !r.ok) throw new Error(`${model} at ${LLM} answered ${r?.status}`);
+    if (!r.body || !(r.headers.get('content-type') ?? '').includes('text/event-stream')) {
+      const d = (await r.json()) as { choices?: { message?: { content?: string | null } }[] };
+      return { raw: dropThinking(`${d.choices?.[0]?.message?.content ?? ''}`), note };
+    }
+    let content = '';
+    let shots = 0;
+    try {
+      for await (const data of sseData(r.body)) {
+        touch();
+        const chunk = JSON.parse(data) as {
+          error?: { message?: string } | string;
+          choices?: { delta?: { content?: string | null; reasoning_content?: string | null; reasoning?: string | null } }[];
+        };
+        if (chunk.error) throw new Error(typeof chunk.error === 'string' ? chunk.error : chunk.error.message || 'stream error');
+        const delta = chunk.choices?.[0]?.delta;
+        if (delta?.content) {
+          content += delta.content;
+          const open = /<think>(?![\s\S]*<\/think>)/i.test(content);
+          const partial = open ? [] : partialShots(dropThinking(content), max);
+          progress({ phase: open ? 'thinking' : 'writing', ...(partial.length !== shots ? { partial } : {}) });
+          shots = partial.length;
+        } else if (delta?.reasoning_content || delta?.reasoning) {
+          progress({ phase: 'thinking' });
+        }
+      }
+    } catch (e) {
+      const why = ctl.signal.aborted && ctl.signal.reason instanceof Error ? ctl.signal.reason : e;
+      const kept = partialShots(dropThinking(content), max);
+      if (kept.length >= SCENE_MIN_SHOTS) {
+        const broke = `llm: the reply broke off after ${kept.length} shots (${errText(why)}); kept those`;
+        return { raw: dropThinking(content), note: note ? `${note}; ${broke}` : broke };
+      }
+      throw why;
+    }
+    return { raw: dropThinking(content), note };
+  } catch (e) {
+    throw ctl.signal.aborted && ctl.signal.reason instanceof Error ? ctl.signal.reason : e;
+  } finally {
+    clearTimeout(idle);
+    clearTimeout(total);
+  }
 }
 
 const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -169,35 +329,51 @@ export function attachCast(shots: SceneShot[], scene: string): SceneShot[] {
 }
 
 /**
- * Start planning a scene. `planner` 'auto' tries the engine, then Ollama,
+ * Start planning a scene. `planner` 'auto' tries the engine, then the
+ * OpenAI-compatible server (only when OPENFIELD_LLM_URL is set), then Ollama,
  * then the sentence split; naming one runs only that one (plus the split
- * when it fails, so the user always gets a list to edit).
+ * when it fails, so the user always gets a list to edit). `think` lets a
+ * thinking model reason before it writes (slower, steadier on scenes with
+ * many beats); off by default, for quick drafts.
  */
-export function startPlan(scene: string, opts: { shots?: number; planner?: string; seed?: number }): Plan {
+export function startPlan(scene: string, opts: { shots?: number; planner?: string; seed?: number; think?: boolean }): Plan {
+  const think = opts.think === true;
   const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const want = opts.shots ? Math.max(SCENE_MIN_SHOTS, Math.min(SCENE_MAX_SHOTS, Math.round(opts.shots))) : 0;
   const plan: Plan = { id, status: 'running', scene, notes: [] };
   plans.set(id, plan);
   const started = Date.now();
-  const order: Planner[] = opts.planner === 'engine' ? ['engine'] : opts.planner === 'ollama' ? ['ollama'] : opts.planner === 'split' ? [] : ['engine', 'ollama'];
+  const order: Planner[] =
+    opts.planner === 'engine' ? ['engine']
+    : opts.planner === 'llm' ? ['llm']
+    : opts.planner === 'ollama' ? ['ollama']
+    : opts.planner === 'split' ? []
+    : LLM ? ['engine', 'llm', 'ollama'] : ['engine', 'ollama'];
+  const progress: PlanProgress = (u) => Object.assign(plan, u);
+  const settle = (u: Partial<Plan>) => Object.assign(plan, { stage: undefined, model: undefined, phase: undefined, partial: undefined }, u);
   void (async () => {
     for (const p of order) {
+      Object.assign(plan, { stage: p, model: undefined, phase: 'waiting', partial: undefined });
       try {
-        const raw = p === 'engine' ? await planOnEngine(scene, want, opts.seed ?? Math.floor(Math.random() * 1e9)) : await planOnOllama(scene, want);
+        const { raw, note } =
+          p === 'engine' ? { raw: await planOnEngine(scene, want, opts.seed ?? Math.floor(Math.random() * 1e9)) }
+          : p === 'llm' ? await planOnLlm(scene, want, think, progress)
+          : { raw: await planOnOllama(scene, want, think) };
+        if (note) plan.notes.push(note);
         const shots = parseShotList(raw, want || SCENE_MAX_SHOTS);
         if (shots) {
           attachCast(shots, scene);
-          Object.assign(plan, { status: 'done', shots, planner: p, raw, seconds: (Date.now() - started) / 1000 });
+          settle({ status: 'done', shots, planner: p, raw, seconds: (Date.now() - started) / 1000 });
           return;
         }
         plan.notes.push(`${p}: the reply had no usable shot list`);
         plan.raw = raw;
       } catch (e) {
-        plan.notes.push(`${p}: ${e instanceof Error ? e.message : e}`);
+        plan.notes.push(`${p}: ${errText(e)}`);
       }
     }
-    Object.assign(plan, { status: 'done', shots: attachCast(splitScene(scene, want), scene), planner: 'split', seconds: (Date.now() - started) / 1000 });
-  })().catch((e) => Object.assign(plan, { status: 'failed', error: e instanceof Error ? e.message : String(e) }));
+    settle({ status: 'done', shots: attachCast(splitScene(scene, want), scene), planner: 'split', seconds: (Date.now() - started) / 1000 });
+  })().catch((e) => settle({ status: 'failed', error: errText(e) }));
   // Plans are small; keep the last hundred.
   if (plans.size > 100) plans.delete(plans.keys().next().value!);
   return plan;

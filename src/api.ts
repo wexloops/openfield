@@ -61,6 +61,8 @@ export interface Status {
   comfyUrl?: string;
   /** The machine-wide video render size and where it came from. */
   renderTier?: TierState;
+  /** Set when OPENFIELD_LLM_REASONING overrides the Director's "Think first" switch (its reasoning_effort value). */
+  plannerReasoning?: string | null;
   /** Set when the server runs as the judge preview (server/judge.ts). */
   judge?: { cap: number; used: number; left: number; maxSeconds: number };
   active: Take[];
@@ -157,7 +159,7 @@ export const api = {
     j<{ takeId: number }>('/api/cast/hero', { method: 'POST', body: JSON.stringify(b) }),
   deletePreamble: (id: number) => j<{ ok: true }>(`/api/preambles/${id}`, { method: 'DELETE' }),
   /** Director scenes: plan a shot list (poll it), then shoot it into one cut. */
-  directorPlan: (body: { scene: string; shots?: number; planner?: string }) =>
+  directorPlan: (body: { scene: string; shots?: number; planner?: string; think?: boolean }) =>
     j<ScenePlan>('/api/director/plan', { method: 'POST', body: JSON.stringify(body) }),
   directorPlanStatus: (id: string) => j<ScenePlan>(`/api/director/plan/${id}`),
   directorScene: (body: Record<string, unknown>) =>
@@ -193,10 +195,15 @@ export interface ScenePlan {
   status: 'running' | 'done' | 'failed';
   scene: string;
   shots?: { framing: string; move: string; action: string; seconds: number }[];
-  planner?: 'engine' | 'ollama' | 'split';
+  planner?: 'engine' | 'llm' | 'ollama' | 'split';
   notes: string[];
   seconds?: number;
   error?: string;
+  /** While running: the planner at work, its model, what it is doing and the shots written so far. */
+  stage?: 'engine' | 'llm' | 'ollama';
+  model?: string;
+  phase?: 'waiting' | 'thinking' | 'writing';
+  partial?: { framing: string; move: string; action: string; seconds: number }[];
 }
 
 /** How a loop closes (server/seam.ts). ratio is the wrap as a multiple of an ordinary frame step. */
