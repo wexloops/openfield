@@ -12,8 +12,8 @@
  * own in the loader node, then queue. Each file loads by dropping it onto the
  * ComfyUI canvas. Re-run after changing a builder; the output is deterministic.
  * workflows/README.md is generated alongside, from the graphs themselves.
- * The files always name the stock LTX-2.5 weights, even when this machine's
- * .env sets OPENFIELD_LTX25_* (server/graphs/ltxfiles.ts).
+ * The files always name the stock weights, whatever this machine's .env sets
+ * for a model slot (server/graphs/slots.ts).
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
@@ -41,7 +41,7 @@ import { buildTrellisGraph } from '../server/graphs/trellis.js';
 import { planBridge, planRegen } from '../server/seam.js';
 import { buildCutoutStillGraph, buildCutoutVideoGraph } from '../server/graphs/cutout.js';
 import { buildRestyleGraph, buildSwapGraph } from '../server/graphs/restyle.js';
-import { clearLtx25Overrides } from '../server/graphs/ltxfiles.js';
+import { clearSlotOverrides } from '../server/graphs/slots.js';
 
 export const OUT = join(ROOT, 'workflows');
 const SEED = 42;
@@ -568,10 +568,10 @@ function writeAll(): void {
   console.log(`${ENTRIES.length} workflows written`);
 }
 
-// Run as `npm run workflows`; scripts/test-ltxfiles.ts imports ENTRIES without writing anything.
+// Run as `npm run workflows`; scripts/test-model-slots.ts imports ENTRIES without writing anything.
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  // These files are the shared examples in the repo: always the stock LTX-2.5
-  // weights, whatever this machine's .env sets (server/graphs/ltxfiles.ts).
-  clearLtx25Overrides();
+  // These files are the shared examples in the repo: always the stock weights,
+  // whatever this machine's .env sets (server/graphs/slots.ts).
+  clearSlotOverrides();
   writeAll();
 }

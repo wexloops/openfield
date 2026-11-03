@@ -30,8 +30,8 @@ export interface Preamble { id: number; name: string; text: string; sort: number
 
 export interface ModelFileRef {
   file: string; dir: string; repo: string; path: string; gb: number; gated?: boolean;
-  /** The OPENFIELD_LTX25_* variable that set this file in place of the stock one. */
-  override?: string;
+  /** Set when a model slot loads this file in place of the stock one: the slot and where the file came from. */
+  slot?: { id: string; origin: string };
 }
 
 export interface BundleStatus {

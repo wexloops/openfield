@@ -7,7 +7,7 @@
  * filename, the folder it belongs in, and where to download it.
  */
 import { comboOptions, listModelFolder, listNodeClasses } from './comfy.js';
-import { activeBundles, bundle, bundleGb, type Bundle, type ModelFile } from './models.js';
+import { activeBundles, bundle, bundleGb, downloadPlan, type Bundle, type ModelFile } from './models.js';
 
 /** ComfyUI folder -> the loader node whose enum lists that folder. */
 const LOADER: Partial<Record<ModelFile['dir'], [string, string]>> = {
@@ -117,11 +117,12 @@ export function reasonFor(all: BundleStatus[], bundleIds: string[]): string | nu
     const st = all.find((s) => s.id === id);
     const b = bundle(id);
     if (!st || !b || st.ready) continue;
-    const files = st.missingFiles.map((f) => `${f.file} (models/${f.dir}/${f.override ? `, set by ${f.override}` : ''})`);
+    const files = st.missingFiles.map((f) => `${f.file} (models/${f.dir}/${f.slot ? `; ${f.slot.origin}` : ''})`);
     const packs = st.missingNodes.map((n) => `${n.pack} custom nodes`);
     problems.push(`${b.label} is missing: ${[...files, ...packs].join(', ')}`);
-    if (st.missingFiles.some((f) => f.override)) configured = true;
-    if (st.missingNodes.length || st.missingFiles.some((f) => !f.override)) fetchable = true;
+    const plan = downloadPlan(st.missingFiles);
+    if (plan.configured.length) configured = true;
+    if (st.missingNodes.length || plan.fetch.length) fetchable = true;
   }
   if (!problems.length) return null;
   const hints = [

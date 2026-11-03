@@ -14,6 +14,7 @@
  *
  * Your own LoRAs chain after the model (and after the draft distill).
  */
+import { slotFile } from './slots.js';
 
 export interface StillsParams {
   model: 'qwen' | 'flux2';
@@ -50,9 +51,9 @@ function qwenGraph(p: StillsParams): Record<string, unknown> {
   const draft = p.quality === 'draft';
   const g0: Record<string, unknown> = {};
   const g: Record<string, unknown> = {
-    u: { class_type: 'UNETLoader', inputs: { unet_name: 'qwen_image_fp8_e4m3fn.safetensors', weight_dtype: 'default' } },
-    c: { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen_2.5_vl_7b_fp8_scaled.safetensors', type: 'qwen_image', device: 'default' } },
-    v: { class_type: 'VAELoader', inputs: { vae_name: 'qwen_image_vae.safetensors' } },
+    u: { class_type: 'UNETLoader', inputs: { unet_name: slotFile('qwen.model'), weight_dtype: 'default' } },
+    c: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('qwen.textEncoder'), type: 'qwen_image', device: 'default' } },
+    v: { class_type: 'VAELoader', inputs: { vae_name: slotFile('qwen.vae') } },
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['c', 0], text: p.prompt } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['c', 0], text: p.negative ?? '' } },
     lat: { class_type: 'EmptySD3LatentImage', inputs: { width: p.width, height: p.height, batch_size: 1 } },
@@ -72,7 +73,7 @@ function qwenGraph(p: StillsParams): Record<string, unknown> {
   if (draft) {
     g.lora = {
       class_type: 'LoraLoaderModelOnly',
-      inputs: { model: ['u', 0], lora_name: 'Qwen-Image-Lightning-8steps-V1.0.safetensors', strength_model: 1.0 },
+      inputs: { model: ['u', 0], lora_name: slotFile('qwen.lightning'), strength_model: 1.0 },
     };
   }
   return { ...g, ...g0 };
@@ -94,9 +95,9 @@ function flux2Graph(p: StillsParams): Record<string, unknown> {
     cond = [`rl${i}`, 0];
   });
   const g: Record<string, unknown> = {
-    u: { class_type: 'UNETLoader', inputs: { unet_name: 'flux2_dev_fp8mixed.safetensors', weight_dtype: 'default' } },
-    c: { class_type: 'CLIPLoader', inputs: { clip_name: 'mistral_3_small_flux2_fp4_mixed.safetensors', type: 'flux2', device: 'default' } },
-    v: { class_type: 'VAELoader', inputs: { vae_name: 'flux2-vae.safetensors' } },
+    u: { class_type: 'UNETLoader', inputs: { unet_name: slotFile('flux2.model'), weight_dtype: 'default' } },
+    c: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('flux2.textEncoder'), type: 'flux2', device: 'default' } },
+    v: { class_type: 'VAELoader', inputs: { vae_name: slotFile('flux2.vae') } },
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['c', 0], text: p.prompt } },
     fg: { class_type: 'FluxGuidance', inputs: { conditioning: cond, guidance: 4 } },
     guider: { class_type: 'BasicGuider', inputs: { model, conditioning: ['fg', 0] } },
@@ -114,7 +115,7 @@ function flux2Graph(p: StillsParams): Record<string, unknown> {
   if (draft) {
     g.lora = {
       class_type: 'LoraLoaderModelOnly',
-      inputs: { model: ['u', 0], lora_name: 'Flux2TurboComfyv2.safetensors', strength_model: 1.0 },
+      inputs: { model: ['u', 0], lora_name: slotFile('flux2.turbo'), strength_model: 1.0 },
     };
   }
   return { ...g, ...g0 };

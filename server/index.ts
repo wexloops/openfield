@@ -26,7 +26,7 @@ import {
   CUTOUT_MAX_SECONDS, DREAM_CREATIVITY, REDRAW_HEIGHTS, REDRAW_MAX_SECONDS, clampEra, cutoutSize, dreamFrames, eraGrade, isRamp, restyleInstruction, restyleLook, restylePrompt,
   sharpenMaxSeconds, swapPrompt, upscaleSize, type UpscaleMode,
 } from '../src/catalog.js';
-import { EDIT_ANGLES_LORA, EDIT_LIGHTNING, EDIT_LIGHTNING_2509, buildEditGraph, editSize, expandLayout } from './graphs/edit.js';
+import { EDIT_ANGLES_LORA, buildEditGraph, editLightning, editSize, expandLayout } from './graphs/edit.js';
 import { buildMirrorGraph } from './graphs/mirror.js';
 import { buildCutoutStillGraph, buildCutoutVideoGraph, type CutoutBackground, type CutoutMethod } from './graphs/cutout.js';
 import { buildRestyleGraph, buildSwapGraph } from './graphs/restyle.js';
@@ -401,7 +401,7 @@ async function editGraph(b: any, seed: number) {
   // Optional LoRAs are used only when the engine lists them, so an install
   // without them still renders (on the base-model Lightning, without angles).
   const have = new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name'));
-  const lightning = have.has(EDIT_LIGHTNING_2509) ? EDIT_LIGHTNING_2509 : EDIT_LIGHTNING;
+  const lightning = editLightning(have);
   const loras = (b.mode === 'angle' || b.mode === 'pushin') && have.has(EDIT_ANGLES_LORA) ? [{ name: EDIT_ANGLES_LORA, strength: 1 }] : [];
   const common = { images, instruction: b.instruction, seed, quality, steps, lightning, loras } as const;
   if (b.expand) {
@@ -492,12 +492,6 @@ async function cutoutGraph(b: any): Promise<Built> {
   };
 }
 
-/** The Lightning LoRA for 8-step edits: the 2509 one when ComfyUI lists it. */
-async function editLightning(): Promise<string> {
-  const have = new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name'));
-  return have.has(EDIT_LIGHTNING_2509) ? EDIT_LIGHTNING_2509 : EDIT_LIGHTNING;
-}
-
 /**
  * Restyle and Object swap (Mirror): an edited first frame carried through the
  * clip's motion. The page compiles the edit instruction and the shot prompt;
@@ -506,7 +500,7 @@ async function editLightning(): Promise<string> {
 async function motionEditGraph(b: any, seed: number): Promise<Built> {
   if (!b.sourceVideo) throw new Error(`${b.kind === 'swap' ? 'Object swap' : 'Restyle'} needs a source clip`);
   const quality = b.quality === 'quality' || (b.kind === 'swap' && b.quality !== 'draft') ? 'quality' : 'draft';
-  const lightning = await editLightning();
+  const lightning = editLightning(new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name')));
   const { width, height } = await frameFor(b, b.kind === 'swap' ? 'swap' : 'restyle', await clipDims(b.sourceVideo), 64);
   if (b.kind === 'restyle') {
     const look = restyleLook(b.style, String(b.text ?? ''));
@@ -586,7 +580,7 @@ async function graphFor(b: any, seed: number): Promise<Built> {
       graph: buildEditGraph({
         images, instruction: String(b.castInstruction ?? b.prompt ?? ''), ...size, seed,
         quality: b.quality === 'draft' ? 'draft' : 'quality',
-        lightning: have.has(EDIT_LIGHTNING_2509) ? EDIT_LIGHTNING_2509 : EDIT_LIGHTNING,
+        lightning: editLightning(have),
         compose: true,
         loras: await pickLoras(b.loras, 'qwen', 'Image'),
       }),
@@ -1624,7 +1618,7 @@ async function stageLookGraph(b: any, seed: number): Promise<Built> {
     const have = new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name'));
     return {
       kind: 'still',
-      graph: buildEditGraph({ images, instruction, width, height, seed, quality: 'draft', lightning: have.has(EDIT_LIGHTNING_2509) ? EDIT_LIGHTNING_2509 : EDIT_LIGHTNING }),
+      graph: buildEditGraph({ images, instruction, width, height, seed, quality: 'draft', lightning: editLightning(have) }),
       settings: { width, height, compiledLook: instruction },
     };
   }

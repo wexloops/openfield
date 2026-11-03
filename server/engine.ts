@@ -18,6 +18,7 @@ import { join } from 'path';
 import { config } from './config.js';
 import { oneAtATime, unloadOnModelSwitch } from './modelSwitch.js';
 import { chunkVideoDecodes, currentVideoDecode } from './videoDecode.js';
+import { configuredSlots, withSlotNote } from './graphs/slots.js';
 
 // 'expired': the proxy lost the job (e.g. ComfyUI restarted under it).
 const TERMINAL = new Set(['succeeded', 'failed', 'canceled', 'cancelled', 'expired']);
@@ -114,7 +115,14 @@ export async function withInputNames(graph: Record<string, unknown>): Promise<Re
  */
 export async function executedWorkflow(jobId: string): Promise<Record<string, unknown> | null> {
   try {
-    const job = jobs.get(jobId) ?? (await sdk().jobs.get(jobId));
+    return await apiWorkflow(jobs.get(jobId) ?? (await sdk().jobs.get(jobId)));
+  } catch {
+    return null;
+  }
+}
+
+async function apiWorkflow(job: Job): Promise<Record<string, unknown> | null> {
+  try {
     const wf = await job.getWorkflow();
     return wf.format === 'api' ? (wf.workflow as Record<string, unknown>) : null;
   } catch {
@@ -258,11 +266,14 @@ export async function result(jobId: string): Promise<JobResult> {
   const renderSeconds = started ? (ended - started) / 1000 : undefined;
   if (job.status !== 'succeeded') {
     const err = job.error as any;
+    const message = String(err?.message ?? err?.detail ?? job.status).trim().slice(0, 500);
+    // The graph it ran tells whether it loaded a slot file set in .env.
+    const graph = job.status === 'failed' && configuredSlots().length ? await apiWorkflow(job) : null;
     return {
       done: true,
       success: false,
       canceled: job.status === 'canceled' || job.status === 'cancelled',
-      error: String(err?.message ?? err?.detail ?? job.status).slice(0, 500),
+      error: withSlotNote(message, graph, err?.node_id ? String(err.node_id) : null),
       renderSeconds,
     };
   }

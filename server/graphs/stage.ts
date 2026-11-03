@@ -5,7 +5,7 @@
  * Lightricks publishes with the LoRA
  * (LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json), flattened to API
  * format. Changes from the official graph:
- *   - our int8 transformer and Gemma 4 encoder (the ltx25Files() slots in ltxfiles.ts)
+ *   - our int8 transformer and Gemma 4 encoder (the ltx25 slots in slots.ts)
  *     in place of the bf16 files;
  *   - plain CLIPTextEncode only: the official graph can route the prompt to
  *     Lightricks' hosted Gemma API instead, which never runs locally;
@@ -20,14 +20,7 @@
  * layout. Where the look frame and the clay disagree, the shot follows the
  * look frame, so the look frame is drawn on the depth pass.
  */
-import { UPSCALER } from './ltx25.js';
-import { ltx25Files } from './ltxfiles.js';
-
-export const LAYOUT_LORA = 'ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors';
-export const ZIMAGE_MODEL = 'z_image_turbo_bf16.safetensors';
-export const ZIMAGE_ENCODER = 'qwen_3_4b.safetensors';
-export const ZIMAGE_VAE = 'ae.safetensors';
-export const ZIMAGE_CONTROL = 'Z-Image-Turbo-Fun-Controlnet-Union.safetensors';
+import { slotFile } from './slots.js';
 
 const SIGMAS_STAGE1 = '1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0';
 const SIGMAS_STAGE2 = '0.909375, 0.725, 0.421875, 0.0';
@@ -57,11 +50,11 @@ export function buildStageShotGraph(p: StageShotParams): Record<string, unknown>
   });
   return {
     // ---- loaders ----
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
-    icl: { class_type: 'LTXICLoRALoaderModelOnly', inputs: { model: ['unet', 0], lora_name: LAYOUT_LORA, strength_model: 1 } },
-    upmodel: { class_type: 'LatentUpscaleModelLoader', inputs: { model_name: UPSCALER } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.videoVae') } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: slotFile('ltx25.transformer'), weight_dtype: 'default' } },
+    icl: { class_type: 'LTXICLoRALoaderModelOnly', inputs: { model: ['unet', 0], lora_name: slotFile('ltx25-loras.stage'), strength_model: 1 } },
+    upmodel: { class_type: 'LatentUpscaleModelLoader', inputs: { model_name: slotFile('ltx25.upscaler') } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('ltx25.textEncoder'), type: 'ltxv', device: 'default' } },
 
     // ---- inputs: the clay clip (camera, motion, layout) and the look frame (art direction) ----
     clay: { class_type: 'LoadVideo', inputs: { file: p.clay } },
@@ -123,10 +116,10 @@ export interface StageLookParams {
 /** Z-Image Turbo + Fun ControlNet Union on the depth pass: 9 steps, CFG 1. */
 export function buildStageLookGraph(p: StageLookParams): Record<string, unknown> {
   return {
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ZIMAGE_ENCODER, type: 'lumina2', device: 'default' } },
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: ZIMAGE_MODEL, weight_dtype: 'default' } },
-    vae: { class_type: 'VAELoader', inputs: { vae_name: ZIMAGE_VAE } },
-    control: { class_type: 'ModelPatchLoader', inputs: { name: ZIMAGE_CONTROL } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('zimage.textEncoder'), type: 'lumina2', device: 'default' } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: slotFile('zimage.model'), weight_dtype: 'default' } },
+    vae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('zimage.vae') } },
+    control: { class_type: 'ModelPatchLoader', inputs: { name: slotFile('zimage.control') } },
     depth: { class_type: 'LoadImage', inputs: { image: p.depth } },
     depthScale: { class_type: 'ImageScale', inputs: { image: ['depth', 0], upscale_method: 'lanczos', width: p.width, height: p.height, crop: 'disabled' } },
     depthFit: { class_type: 'ImageBlur', inputs: { image: ['depthScale', 0], blur_radius: Math.ceil((p.soften ?? 4) * 2.5), sigma: p.soften ?? 4 } },

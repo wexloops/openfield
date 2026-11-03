@@ -46,7 +46,7 @@ export default function Setup() {
               {b.licenseWarning && <div style={{ color: 'var(--accent)', fontSize: 12.5 }}>{b.licenseWarning}</div>}
               {!b.ready && (
                 <div className="compiled">
-                  {b.missingFiles.map((f) => <div key={f.file}>models/{f.dir}/{f.file}  ← {f.override ? `set by ${f.override} in .env (not downloaded)` : `${f.repo}${f.gated ? ' (gated: accept the license on Hugging Face first)' : ''}`}</div>)}
+                  {b.missingFiles.map((f) => <div key={f.file}>models/{f.dir}/{f.file}  ← {f.slot ? `${f.slot.origin} (not downloaded)` : `${f.repo}${f.gated ? ' (gated: accept the license on Hugging Face first)' : ''}`}</div>)}
                   {b.missingNodes.map((n) => <div key={n.class}>custom nodes: {n.pack}  ← {n.url}</div>)}
                 </div>
               )}

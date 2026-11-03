@@ -98,7 +98,7 @@ export const takes = {
     db.prepare("UPDATE takes SET status='done', output_path=?, render_seconds=? WHERE id=? AND status<>'stopped'").run(outputPath, renderSeconds ?? null, id);
   },
   fail(id: number, error: string, stopped = false) {
-    db.prepare("UPDATE takes SET status=?, error=? WHERE id=? AND status<>'stopped'").run(stopped ? 'stopped' : 'failed', error.slice(0, 500), id);
+    db.prepare("UPDATE takes SET status=?, error=? WHERE id=? AND status<>'stopped'").run(stopped ? 'stopped' : 'failed', error.slice(0, 2000), id);
   },
   /** Replace a take's settings (a chained take learns its start frame late; the Director's scene cut keeps its shot list here). */
   setSettings(id: number, settings: unknown) {

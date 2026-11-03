@@ -13,7 +13,7 @@
  * Output is silent: house rule, loops carry no sound.
  */
 import { NEGATIVE, SIGMAS_REFINE, buildLtx25Graph, LTX25_FPS } from './ltx25.js';
-import { ltx25Files } from './ltxfiles.js';
+import { slotFile } from './slots.js';
 
 /** The distilled schedule's low end; a partial re-render starts at sigma and finishes on these. */
 const SIGMAS_TAIL = SIGMAS_REFINE.split(',').map(Number).filter((s) => s > 0);
@@ -153,10 +153,10 @@ export function buildSeamRegenGraph(p: SeamRegenParams): Graph {
     early: { class_type: 'ImageFromBatch', inputs: { image: ['src', 0], batch_index: 0, length: p.h } },
     rotated: { class_type: 'BatchImagesNode', inputs: { 'images.image0': ['late', 0], 'images.image1': ['early', 0] } },
 
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' } },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: slotFile('ltx25.transformer'), weight_dtype: 'default' } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: slotFile('ltx25.textEncoder'), type: 'ltxv', device: 'default' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.videoVae') } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: slotFile('ltx25.audioVae') } },
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.prompt } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative ?? NEGATIVE } },
     cond: { class_type: 'LTXVConditioning', inputs: { positive: ['pos', 0], negative: ['neg', 0], frame_rate: fps } },

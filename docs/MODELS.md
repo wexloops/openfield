@@ -369,21 +369,13 @@ The older LTX engine, kept because it is the playground for community fine-tunes
 
 🔒 = gated repo. Open the model page, accept the license, then set `HF_TOKEN`.
 
-## Other LTX-2.5 weights
+## Other weights for the same model
 
-Every LTX-2.5 app loads the same four files. Each one can be swapped for another
-file, for example a fine-tune or a different quantization of LTX-2.5, by setting
-its variable in `.env`:
-
-| Variable | Replaces | Folder |
-| --- | --- | --- |
-| `OPENFIELD_LTX25_TRANSFORMER` | `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors` | `models/diffusion_models/` |
-| `OPENFIELD_LTX25_TEXT_ENCODER` | `gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors` | `models/text_encoders/` |
-| `OPENFIELD_LTX25_VIDEO_VAE` | `ltx-2.5-video-vae-bf16.safetensors` | `models/vae/` |
-| `OPENFIELD_LTX25_AUDIO_VAE` | `ltx-2.5-audio-vae-bf16.safetensors` | `models/vae/` |
-
-The value is the name exactly as ComfyUI lists it in that loader. A file in a
-subfolder keeps the subfolder, and ComfyUI on Windows writes it with a backslash:
+Each model family loads its files through named slots. A slot can take another
+file of the same model, for example a fine-tune or a different quantization, by
+setting its variable in `.env`. The value is the name exactly as ComfyUI lists it
+in that loader. A file in a subfolder keeps the subfolder, and ComfyUI on Windows
+writes it with a backslash:
 
 ```
 OPENFIELD_LTX25_TRANSFORMER=ltx25\my-ltx25-finetune-fp8.safetensors
@@ -392,9 +384,82 @@ OPENFIELD_LTX25_TRANSFORMER=ltx25\my-ltx25-finetune-fp8.safetensors
 Restart OpenField after a change. Setup and `npm run doctor` then check for the
 configured file in place of the stock one, and `npm run models` never downloads
 a configured file: put it in the folder yourself. Variables left unset keep the
-stock file. The latent upscaler is not configurable.
+stock file. A render that fails in a node loading a configured file names its
+slot and the file.
 
-Use weights that keep the LTX-2.5 architecture: the graphs, step counts and
-IC-LoRAs (Effects, Mirror, Reshoot, Cast, Stage, HDR) are made for the stock
-distilled model. A model with LoRAs merged in can behave differently under those
-IC-LoRAs; try each app you use. `npm run workflows` always writes the stock names.
+### LTX-2.5 video
+
+Every LTX-2.5 app: Video, Director, Extend, Transition, Add sound, Speak, Effects, Restyle, Mirror, Reshoot, Cast, Stage, HDR, Seam Doctor and Upscale Dream.
+
+| Slot | Variable | Stock file | Folder |
+| --- | --- | --- | --- |
+| Transformer | `OPENFIELD_LTX25_TRANSFORMER` | `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors` | `models/diffusion_models/` |
+| Text encoder | `OPENFIELD_LTX25_TEXT_ENCODER` | `gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors` | `models/text_encoders/` |
+| Video VAE | `OPENFIELD_LTX25_VIDEO_VAE` | `ltx-2.5-video-vae-bf16.safetensors` | `models/vae/` |
+| Audio VAE | `OPENFIELD_LTX25_AUDIO_VAE` | `ltx-2.5-audio-vae-bf16.safetensors` | `models/vae/` |
+| Latent upscaler | `OPENFIELD_LTX25_UPSCALER` | `ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors` | `models/latent_upscale_models/` |
+
+### LTX-2.5 app LoRAs
+
+The IC-LoRA each app loads on top of the LTX-2.5 transformer.
+
+| Slot | Variable | Stock file | Folder |
+| --- | --- | --- | --- |
+| Cast (Ingredients) | `OPENFIELD_LTX25_CAST_LORA` | `ltx-2.5-22b-ic-lora-ingredients-0.9.safetensors` | `models/loras/` |
+| Stage (Layout to Render) | `OPENFIELD_LTX25_STAGE_LORA` | `ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors` | `models/loras/` |
+| Finish in HDR (SDR to HDR) | `OPENFIELD_LTX25_HDR_LORA` | `ltx-2.5-22b-ic-lora-sdr-to-hdr-1.0.safetensors` | `models/loras/` |
+| Mirror and Restyle (Union Control) | `OPENFIELD_LTX25_MIRROR_LORA` | `ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors` | `models/loras/` |
+| Reshoot (CrossView-Warp) | `OPENFIELD_LTX25_RESHOOT_LORA` | `LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors` | `models/loras/` |
+| Object swap (In/outpainting) | `OPENFIELD_LTX25_SWAP_LORA` | `ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors` | `models/loras/` |
+
+### Qwen-Image stills and edits
+
+Image (Qwen-Image), Edit and its one-click apps. The text encoder, VAE and Lightning LoRA are shared by both.
+
+| Slot | Variable | Stock file | Folder |
+| --- | --- | --- | --- |
+| Qwen-Image model | `OPENFIELD_QWEN_MODEL` | `qwen_image_fp8_e4m3fn.safetensors` | `models/diffusion_models/` |
+| Qwen-Image-Edit model | `OPENFIELD_QWEN_EDIT_MODEL` | `qwen_image_edit_2509_fp8_e4m3fn.safetensors` | `models/diffusion_models/` |
+| Text encoder | `OPENFIELD_QWEN_TEXT_ENCODER` | `qwen_2.5_vl_7b_fp8_scaled.safetensors` | `models/text_encoders/` |
+| VAE | `OPENFIELD_QWEN_VAE` | `qwen_image_vae.safetensors` | `models/vae/` |
+| Draft LoRA (Lightning) | `OPENFIELD_QWEN_LIGHTNING_LORA` | `Qwen-Image-Lightning-8steps-V1.0.safetensors` | `models/loras/` |
+
+### FLUX.2 stills
+
+Image with the FLUX.2 model, and Cast stills on FLUX.2.
+
+| Slot | Variable | Stock file | Folder |
+| --- | --- | --- | --- |
+| Model | `OPENFIELD_FLUX2_MODEL` | `flux2_dev_fp8mixed.safetensors` | `models/diffusion_models/` |
+| Text encoder | `OPENFIELD_FLUX2_TEXT_ENCODER` | `mistral_3_small_flux2_fp4_mixed.safetensors` | `models/text_encoders/` |
+| VAE | `OPENFIELD_FLUX2_VAE` | `flux2-vae.safetensors` | `models/vae/` |
+| Draft LoRA (Turbo) | `OPENFIELD_FLUX2_TURBO_LORA` | `Flux2TurboComfyv2.safetensors` | `models/loras/` |
+
+### Stage look frames (Z-Image Turbo)
+
+The look frame of a Stage shot, drawn on the depth pass of the blocking.
+
+| Slot | Variable | Stock file | Folder |
+| --- | --- | --- | --- |
+| Model | `OPENFIELD_ZIMAGE_MODEL` | `z_image_turbo_bf16.safetensors` | `models/diffusion_models/` |
+| Text encoder | `OPENFIELD_ZIMAGE_TEXT_ENCODER` | `qwen_3_4b.safetensors` | `models/text_encoders/` |
+| VAE | `OPENFIELD_ZIMAGE_VAE` | `ae.safetensors` | `models/vae/` |
+| Depth control (Fun ControlNet Union) | `OPENFIELD_ZIMAGE_CONTROL` | `Z-Image-Turbo-Fun-Controlnet-Union.safetensors` | `models/model_patches/` |
+
+### MiniMax H3 video
+
+Video and Loop on the H3 engine, and Refs mode.
+
+| Slot | Variable | Stock file | Folder |
+| --- | --- | --- | --- |
+| Model (Video, Loop) | `OPENFIELD_H3_MODEL` | `minimax_h3_fl2va_pruned_fp8_scaled.safetensors` | `models/diffusion_models/` |
+| Model (Refs mode) | `OPENFIELD_H3_REFS_MODEL` | `minimax_h3_ref2va_pruned_fp8_scaled.safetensors` | `models/diffusion_models/` |
+| Text encoder | `OPENFIELD_H3_TEXT_ENCODER` | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `models/text_encoders/` |
+| Video VAE | `OPENFIELD_H3_VIDEO_VAE` | `minimax_h3_video_vae_fp16.safetensors` | `models/vae/` |
+| Audio VAE | `OPENFIELD_H3_AUDIO_VAE` | `minimax_h3_audio_vae_fp32.safetensors` | `models/vae/` |
+
+Use weights that keep the architecture of the slot: the graphs, step counts and
+LoRAs are made for the stock files. For LTX-2.5 that includes the IC-LoRAs of
+Effects, Mirror, Reshoot, Cast, Stage and HDR; a model with LoRAs merged in can
+behave differently under them, so try each app you use. `npm run workflows`
+always writes the stock names.
