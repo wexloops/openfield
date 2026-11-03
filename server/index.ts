@@ -54,8 +54,10 @@ import { collectHdr } from './hdr.js';
 import { buildStageLookGraph, buildStageShotGraph, lookEditInstruction, lookPrompt } from './graphs/stage.js';
 import { checkSize, ingestBlocking, rasterBlocking, stageLookFrame } from './stage.js';
 import { cleanStageScene, lookSize, stageTier } from '../src/stage.js';
-import { appTier, isRenderTier, parseTier, tierSizeOf, type TierApp } from '../src/renderTier.js';
+import { appTier, isRenderTier, parseTier, tierSizeOf, type RenderTier, type TierApp } from '../src/renderTier.js';
 import { currentTier, setTier, tierState } from './renderTier.js';
+import { isVideoDecode, type VideoDecode } from '../src/videoDecode.js';
+import { setVideoDecode, videoDecodeState } from './videoDecode.js';
 import { MIN_PASSWORD, installJudge, type JudgeState } from './judge.js';
 
 if (config.judge.on && config.judge.password.length < MIN_PASSWORD) {
@@ -228,7 +230,7 @@ app.get('/live', { websocket: true }, (conn) => {
 // ---------- API ----------
 
 app.get('/api/status', async () => {
-  const [st, api, renderTier] = await Promise.all([comfy.getStatus(), eng.apiUp(), tierState()]);
+  const [st, api, renderTier, videoDecode] = await Promise.all([comfy.getStatus(), eng.apiUp(), tierState(), videoDecodeState()]);
   return {
     ...st,
     // Cloud target: the local ComfyUI server is irrelevant, the v2 API is the engine.
@@ -239,21 +241,29 @@ app.get('/api/status', async () => {
     canLaunch: comfy.canLaunchEngine(),
     comfyUrl: config.comfyUrl,
     renderTier,
+    videoDecode,
     // OPENFIELD_LLM_REASONING overrides the Director's "Think first" switch; the page shows it as set by the server.
     plannerReasoning: plannerReasoningOverride(),
     judge: judgeState?.(),
   };
 });
 
-/** Machine-wide settings. renderTier: the video render size; source says where it came from. */
-app.get('/api/settings', async () => ({ renderTier: await tierState() }));
+/**
+ * Machine-wide settings; each state says where its value came from.
+ * renderTier: the video render size. videoDecode: whole-clip or chunked video decode.
+ */
+app.get('/api/settings', async () => ({ renderTier: await tierState(), videoDecode: await videoDecodeState() }));
 app.put('/api/settings', async (req, reply) => {
-  const b = (req.body ?? {}) as { renderTier?: unknown };
-  if ('renderTier' in b) {
-    if (b.renderTier !== null && !isRenderTier(b.renderTier)) return reply.code(400).send({ error: 'renderTier is 480p, 720p, 1080p, or null for the default' });
-    setTier(b.renderTier);
+  const b = (req.body ?? {}) as { renderTier?: unknown; videoDecode?: unknown };
+  if ('renderTier' in b && b.renderTier !== null && !isRenderTier(b.renderTier)) {
+    return reply.code(400).send({ error: 'renderTier is 480p, 720p, 1080p, or null for the default' });
   }
-  return { renderTier: await tierState() };
+  if ('videoDecode' in b && b.videoDecode !== null && !isVideoDecode(b.videoDecode)) {
+    return reply.code(400).send({ error: 'videoDecode is whole, chunked, or null for the default' });
+  }
+  if ('renderTier' in b) setTier(b.renderTier as RenderTier | null);
+  if ('videoDecode' in b) setVideoDecode(b.videoDecode as VideoDecode | null);
+  return { renderTier: await tierState(), videoDecode: await videoDecodeState() };
 });
 
 app.post('/api/upload', async (req, reply) => {

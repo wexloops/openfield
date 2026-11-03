@@ -17,6 +17,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { config } from './config.js';
 import { oneAtATime, unloadOnModelSwitch } from './modelSwitch.js';
+import { chunkVideoDecodes, currentVideoDecode } from './videoDecode.js';
 
 // 'expired': the proxy lost the job (e.g. ComfyUI restarted under it).
 const TERMINAL = new Set(['succeeded', 'failed', 'canceled', 'cancelled', 'expired']);
@@ -121,8 +122,13 @@ export async function executedWorkflow(jobId: string): Promise<Record<string, un
   }
 }
 
-/** Submit an API-format graph. Returns the Comfy job id. */
+/**
+ * Submit an API-format graph. Returns the Comfy job id. In chunks mode (Setup
+ * > Video decode) its whole-clip video decodes are switched to chunks first,
+ * in place, so the copy the caller records is what ran.
+ */
 export async function submit(graph: Record<string, unknown>): Promise<string> {
+  if ((await currentVideoDecode()) === 'chunked') chunkVideoDecodes(graph);
   // A local ComfyUI that keeps every model loaded (--highvram) is cleared
   // before this graph runs when it needs a different large model
   // (server/modelSwitch.ts). One submission at a time, so each sees the jobs

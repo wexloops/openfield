@@ -4,6 +4,7 @@ import { api, posterUrl, mediaUrl, turntableUrl, type Take } from './api';
 import { isActive, isImage, isModel, refreshStatus, settingsOf, toast, useStore } from './store';
 import { APP_MAX_TIER, RENDER_TIERS, appTier, tierCapNote, tierDef, tiersUpTo, type RenderTier, type TierApp } from './renderTier';
 import { takeDragProps } from './drop';
+import { VIDEO_DECODES, type VideoDecode } from './videoDecode';
 
 // ---------- icons (1.6px stroke, 16px box) ----------
 const P: Record<string, ReactNode> = {
@@ -206,6 +207,43 @@ export function RenderTierPicker({ compact }: { compact?: boolean }) {
       </div>
       <div className="dim" style={{ fontSize: 12 }}>
         {judge ? 'Fixed in the judge preview.' : <>{tierDef(cur).note} {why}</>}
+        {!judge && st?.source === 'user' && <> <button type="button" className="linkish" disabled={busy} onClick={() => void pick(null)}>Use the default</button></>}
+      </div>
+    </div>
+  );
+}
+
+/** The machine-wide video decode, as Setup shows it: whole clip or in chunks. */
+export function VideoDecodePicker() {
+  const st = useStore((s) => s.status?.videoDecode);
+  const judge = useStore((s) => !!s.status?.judge);
+  const [busy, setBusy] = useState(false);
+  async function pick(m: VideoDecode | null) {
+    setBusy(true);
+    try {
+      await api.setVideoDecode(m);
+      await refreshStatus();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'could not save the video decode', true);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const cur = st?.mode ?? 'whole';
+  const def = VIDEO_DECODES.find((d) => d.id === cur) ?? VIDEO_DECODES[0];
+  const autoLabel = VIDEO_DECODES.find((d) => d.id === st?.auto)?.label.toLowerCase() ?? '';
+  const why = !st ? '' : st.source === 'env' ? 'Set by OPENFIELD_VIDEO_DECODE.' : st.source === 'gpu' ? 'Picked for this GPU.' : `Your pick. This GPU's default is ${autoLabel}.`;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+      <div className="seg">
+        {VIDEO_DECODES.map((d) => (
+          <button key={d.id} type="button" className={cur === d.id ? 'on' : ''} disabled={busy || judge} title={d.note} onClick={() => void pick(d.id)}>
+            {d.label}
+          </button>
+        ))}
+      </div>
+      <div className="dim" style={{ fontSize: 12 }}>
+        {judge ? 'Fixed in the judge preview.' : <>{def.note} {why}</>}
         {!judge && st?.source === 'user' && <> <button type="button" className="linkish" disabled={busy} onClick={() => void pick(null)}>Use the default</button></>}
       </div>
     </div>
