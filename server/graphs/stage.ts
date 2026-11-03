@@ -5,7 +5,7 @@
  * Lightricks publishes with the LoRA
  * (LTX-2.5_ICLoRA_Layout_To_Render_Two_Stage_Distilled.json), flattened to API
  * format. Changes from the official graph:
- *   - our int8 transformer and Gemma 4 encoder (TRANSFORMER / TEXT_ENCODER in ltx25.ts)
+ *   - our int8 transformer and Gemma 4 encoder (the ltx25Files() slots in ltxfiles.ts)
  *     in place of the bf16 files;
  *   - plain CLIPTextEncode only: the official graph can route the prompt to
  *     Lightricks' hosted Gemma API instead, which never runs locally;
@@ -20,7 +20,8 @@
  * layout. Where the look frame and the clay disagree, the shot follows the
  * look frame, so the look frame is drawn on the depth pass.
  */
-import { TEXT_ENCODER, TRANSFORMER, UPSCALER, VIDEO_VAE } from './ltx25.js';
+import { UPSCALER } from './ltx25.js';
+import { ltx25Files } from './ltxfiles.js';
 
 export const LAYOUT_LORA = 'ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors';
 export const ZIMAGE_MODEL = 'z_image_turbo_bf16.safetensors';
@@ -56,11 +57,11 @@ export function buildStageShotGraph(p: StageShotParams): Record<string, unknown>
   });
   return {
     // ---- loaders ----
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: VIDEO_VAE } },
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: TRANSFORMER, weight_dtype: 'default' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
     icl: { class_type: 'LTXICLoRALoaderModelOnly', inputs: { model: ['unet', 0], lora_name: LAYOUT_LORA, strength_model: 1 } },
     upmodel: { class_type: 'LatentUpscaleModelLoader', inputs: { model_name: UPSCALER } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: TEXT_ENCODER, type: 'ltxv', device: 'default' } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv', device: 'default' } },
 
     // ---- inputs: the clay clip (camera, motion, layout) and the look frame (art direction) ----
     clay: { class_type: 'LoadVideo', inputs: { file: p.clay } },

@@ -18,7 +18,7 @@ import { buildH3Graph, snapH3Length } from './graphs/h3.js';
 import { buildLtxGraph } from './graphs/ltx.js';
 import { buildLtx25Graph, ltx25EffectiveSize, ltx25Mode, LTX25_FPS, snapFrames } from './graphs/ltx25.js';
 import { applyPost } from './graphs/director.js';
-import { advance, cleanScene, getPlan, initScenes, postBlockingReason, shootScene, shotsOf, startPlan, waitingCuts } from './scene.js';
+import { advance, cleanScene, getPlan, initScenes, plannerReasoningOverride, postBlockingReason, shootScene, shotsOf, startPlan, waitingCuts } from './scene.js';
 import { buildStillsGraph } from './graphs/stills.js';
 import { listUserLoras, pickLoras, type LoraFamily } from './loras.js';
 import { buildDreamGraph, buildRedrawGraph, buildSharpenGraph, redrawBatch, type UpscaleSource } from './graphs/upscale.js';
@@ -42,6 +42,7 @@ import { buildCastVideoGraph } from './graphs/cast.js';
 import { imageDims, saveToProject, safeShotName } from './files.js';
 import { transcribe } from './whisper.js';
 import { bundlesFor } from './models.js';
+import { modelsUnloaded } from './modelSwitch.js';
 import { blockingReason, clearPreflightCache, effectBlockingReason, preflight } from './preflight.js';
 import { effectById, effectPrompt } from '../src/effects.js';
 import { closePhoneSession, openPhoneSession, phoneSession } from './phone.js';
@@ -241,6 +242,8 @@ app.get('/api/status', async () => {
     comfyUrl: config.comfyUrl,
     renderTier,
     videoDecode,
+    // OPENFIELD_LLM_REASONING overrides the Director's "Think first" switch; the page shows it as set by the server.
+    plannerReasoning: plannerReasoningOverride(),
     judge: judgeState?.(),
   };
 });
@@ -1343,10 +1346,10 @@ initScenes({ queueTakes, broadcast, recordWorkflow, probeMedia });
 
 /** Start planning a scene into shots. Poll GET /api/director/plan/:id. */
 app.post('/api/director/plan', async (req, reply) => {
-  const b = (req.body ?? {}) as { scene?: string; shots?: number; planner?: string; seed?: number };
+  const b = (req.body ?? {}) as { scene?: string; shots?: number; planner?: string; seed?: number; think?: boolean };
   const scene = String(b.scene ?? '').trim();
   if (!scene) return reply.code(400).send({ error: 'Write the scene first' });
-  return startPlan(scene, { shots: Number(b.shots) || undefined, planner: b.planner, seed: Number.isFinite(b.seed) ? Number(b.seed) : undefined });
+  return startPlan(scene, { shots: Number(b.shots) || undefined, planner: b.planner, seed: Number.isFinite(b.seed) ? Number(b.seed) : undefined, think: b.think === true });
 });
 
 app.get('/api/director/plan/:id', async (req, reply) => {
@@ -2167,6 +2170,7 @@ app.post('/api/free', async (_req, reply) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ unload_models: true, free_memory: true }),
   }).catch(() => null);
+  modelsUnloaded();
   return { ok: true };
 });
 

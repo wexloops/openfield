@@ -27,6 +27,7 @@
  * LoRA 0.6 and a 2x upscale pass; we skip both for speed.
  */
 import { snapFrames } from './ltx25.js';
+import { ltx25Files } from './ltxfiles.js';
 
 export interface ReshootKeyframe {
   /** Frame number, 1-based (the CrossView Warp node's convention). */
@@ -63,10 +64,6 @@ export interface ReshootParams {
 
 export const RESHOOT_LORA = 'LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors';
 export const MOGE_MODEL = 'moge_2_vitl_normal_fp16.safetensors';
-const TRANSFORMER = 'ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors';
-const TEXT_ENCODER = 'gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors';
-const VIDEO_VAE = 'ltx-2.5-video-vae-bf16.safetensors';
-const AUDIO_VAE = 'ltx-2.5-audio-vae-bf16.safetensors';
 const SIGMAS = '1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0';
 const NEGATIVE = 'magenta, pink holes, smeared, warped, distorted face, blurry, low quality, text, watermark';
 const TRIGGER = 'crossview.';
@@ -148,14 +145,14 @@ export function buildReshootGraph(p: ReshootParams): Record<string, unknown> {
 
   const g: Record<string, any> = {
     ...w,
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: TRANSFORMER, weight_dtype: 'default' } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: ltx25Files().transformer, weight_dtype: 'default' } },
     // LTXICLoRALoaderModelOnly = LoraLoaderModelOnly that also reads the
     // LoRA's trained reference downscale. We still hard-set 1 on the guides,
     // which is what this LoRA was trained with.
     lora: { class_type: 'LTXICLoRALoaderModelOnly', inputs: { model: ['unet', 0], lora_name: RESHOOT_LORA, strength_model: p.loraStrength ?? 1.3 } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: TEXT_ENCODER, type: 'ltxv' } },
-    vvae: { class_type: 'VAELoader', inputs: { vae_name: VIDEO_VAE } },
-    avae: { class_type: 'VAELoader', inputs: { vae_name: AUDIO_VAE } },
+    clip: { class_type: 'CLIPLoader', inputs: { clip_name: ltx25Files().textEncoder, type: 'ltxv' } },
+    vvae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().videoVae } },
+    avae: { class_type: 'VAELoader', inputs: { vae_name: ltx25Files().audioVae } },
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: NEGATIVE } },
     cond: { class_type: 'LTXVConditioning', inputs: { positive: ['pos', 0], negative: ['neg', 0], frame_rate: FPS } },
