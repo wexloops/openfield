@@ -11,6 +11,7 @@
     "build": "npm run typecheck && vite build",
     "start": "tsx server/index.ts --production",
     "test:judge": "tsx scripts/test-judge.ts",
+    "test:h3-turbo": "tsx scripts/test-h3-turbo.ts",
     "test:video-decode": "tsx scripts/test-video-decode.ts",
     "test:model-switch": "tsx scripts/test-model-switch.ts",
     "test:ltxfiles": "tsx scripts/test-ltxfiles.ts",

@@ -14,7 +14,7 @@ import type { WebSocket } from 'ws';
 import * as comfy from './comfy.js';
 import * as eng from './engine.js';
 import { config, ROOT } from './config.js';
-import { buildH3Graph, snapH3Length } from './graphs/h3.js';
+import { buildH3Graph, snapH3Length, turboProblem } from './graphs/h3.js';
 import { buildLtxGraph } from './graphs/ltx.js';
 import { buildLtx25Graph, ltx25EffectiveSize, ltx25Mode, LTX25_FPS, snapFrames } from './graphs/ltx25.js';
 import { applyPost } from './graphs/director.js';
@@ -59,6 +59,7 @@ import { currentTier, setTier, tierState } from './renderTier.js';
 import { isVideoDecode, type VideoDecode } from '../src/videoDecode.js';
 import { setVideoDecode, videoDecodeState } from './videoDecode.js';
 import { MIN_PASSWORD, installJudge, type JudgeState } from './judge.js';
+import { estimate } from './estimate.js';
 
 if (config.judge.on && config.judge.password.length < MIN_PASSWORD) {
   console.error(`OPENFIELD_JUDGE is on, so OPENFIELD_JUDGE_PASSWORD must be set (${MIN_PASSWORD} characters or more). Not starting.`);
@@ -790,6 +791,11 @@ async function graphFor(b: any, seed: number): Promise<Built> {
     });
   } else {
     kind = 'video';
+    const turbo = typeof b.h3Turbo === 'string' && b.h3Turbo ? b.h3Turbo : undefined;
+    if (turbo) {
+      const problem = turboProblem(turbo, !!b.refImages?.length, new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name')));
+      if (problem) throw new Error(problem);
+    }
     graph = buildH3Graph({
       prompt: b.prompt,
       width: b.width || 864,
@@ -804,7 +810,7 @@ async function graphFor(b: any, seed: number): Promise<Built> {
       extraLora: typeof b.extraLora === 'string' && b.extraLora ? b.extraLora : undefined,
       extraLoraStrength: b.extraLoraStrength,
       // Turbo overrides steps/shift inside the builder; '' = full sampling.
-      turbo: typeof b.h3Turbo === 'string' && b.h3Turbo ? b.h3Turbo : undefined,
+      turbo,
       // House rule: no audio on visual loops. Opt in per shot for dialogue.
       withAudio: !!b.withAudio,
     });
@@ -2136,31 +2142,7 @@ app.get('/api/poster/:id', async (req, reply) => {
 });
 
 /** Typical render time for a shot like this one, from past takes on this machine. */
-app.get('/api/estimate', async (req) => {
-  const q = req.query as any;
-  const want = (t: any) => {
-    const s = JSON.parse(t.settings);
-    if (t.kind !== (q.kind === 'still' || q.kind === 'upres' || q.kind === 'object' ? q.kind : 'video')) return false;
-    // Upscale takes only answer for the Upscale app, per mode.
-    if ((s.app === 'upscale') !== (q.app === 'upscale')) return false;
-    // Apps with their own pipeline (Remove background, Restyle, Swap) only answer for themselves.
-    if (q.app && s.app !== q.app) return false;
-    if (q.mode && s.mode !== q.mode) return false;
-    if (q.model && (s.videoModel || s.model) !== q.model) return false;
-    if (q.quality && s.quality && s.quality !== q.quality) return false;
-    const px = (s.width || 0) * (s.height || 0);
-    const qpx = Number(q.w) * Number(q.h);
-    if (qpx && Math.abs(px - qpx) / qpx > 0.25) return false;
-    if (q.seconds && s.seconds && Math.abs(s.seconds - Number(q.seconds)) > 1) return false;
-    return true;
-  };
-  const secs = takes
-    .list(null, 400)
-    .filter((t) => t.status === 'done' && t.render_seconds && want(t))
-    .map((t) => t.render_seconds!)
-    .sort((a, b) => a - b);
-  return { seconds: secs.length ? secs[Math.floor(secs.length / 2)] : null, samples: secs.length };
-});
+app.get('/api/estimate', async (req) => estimate(req.query as Record<string, string | undefined>, takes.list(null, 400)));
 
 /** Unload models and free VRAM on the local engine. */
 app.post('/api/free', async (_req, reply) => {

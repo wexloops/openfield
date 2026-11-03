@@ -106,6 +106,16 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     same('video ltx25 + your LoRA', videoBody({ model: 'ltx25', prompt: 'a man runs', preset: 'free', size: videoSize('16:9', '720p'), seconds: 5, count: 1, audio: false, loras }), oracle);
     assert.throws(() => videoBody({ model: 'h3', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, startImage: 's.png', loras }), /LTX-2.5/);
   }
+  // H3 turbo: the page sends h3Turbo only on H3, as the chip picked it.
+  assert.ok(src.includes("if (model.id === 'h3' && turbo) body.h3Turbo = turbo;"), 'Video.tsx H3 turbo rule moved');
+  {
+    const size = videoSize('16:9', '480p', { w: 1344, h: 768 });
+    const b = videoBody({ model: 'h3', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, startImage: 's.png', turbo: 'v11-4' });
+    assert.equal(b.h3Turbo, 'v11-4');
+    assert.equal(videoBody({ model: 'h3', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, startImage: 's.png' }).h3Turbo, undefined);
+    assert.throws(() => videoBody({ model: 'ltx25', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, turbo: 'v11-4' }), /H3/);
+    console.log('ok  video h3 turbo');
+  }
   // Cast: the page sends castMode only for a hero frame, while @mentions are in play.
   assert.ok(src.includes("if (castOn && castMode === 'frame') body.castMode = 'frame';"), 'Video.tsx cast mode rule moved');
   {

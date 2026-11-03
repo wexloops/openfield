@@ -60,6 +60,8 @@ export interface VideoOpts {
   autoFix?: boolean;
   /** Your own LTX LoRAs (LTX-2.5 only), as the LoRA chip sends them. */
   loras?: LoraPick[];
+  /** H3 turbo preset id (src/presets.ts H3_TURBO), as the Turbo chip sends it. */
+  turbo?: string;
 }
 
 /** One of your own LoRAs on a take: an engine LoRA filename (list_loras) and its strength. */
@@ -81,6 +83,10 @@ export function videoBody(o: VideoOpts): Body {
     startImage: o.startImage, endImage: end, shotName: (o.prompt || preset.name).slice(0, 40),
   };
   if (model.id === 'h3') body.lengthFrames = secondsToFrames(o.seconds);
+  if (o.turbo) {
+    if (model.id !== 'h3') throw new Error('Turbo presets are for MiniMax H3.');
+    body.h3Turbo = o.turbo;
+  }
   // The page only sends it while @mentions with pictures are in play; the server ignores it otherwise.
   if (o.castMode === 'frame') body.castMode = 'frame';
   if (o.loop && o.autoFix) body.seamFix = 'auto';

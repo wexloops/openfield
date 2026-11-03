@@ -28,6 +28,7 @@ import { APP_MAX_TIER, RENDER_TIERS, appTier, tierCapNote, tiersUpTo, type Rende
 import { CAMERA_MOVES, LENS_MAX, LENS_MIN, MAX_KEYS, MAX_PROPS, MODEL_PROP_SIZE, PROP_DEFAULTS, STAGE_SECONDS, cleanStageScene, stageFrames, stageSize, stageTier, type CameraKey, type StageProp, type Vec3 } from '../src/stage.ts';
 import { BASE, api, finishFileUrl, getTake, localPath, mediaUrl, posterImage, resolveInput, settingsOf, type Asset, type Take } from './client.ts';
 import { OBJECT_DETAIL } from '../src/catalog.ts';
+import { H3_TURBO } from '../src/presets.ts';
 
 const server = new McpServer(
   { name: 'openfield', version: '0.1.0' },
@@ -331,13 +332,15 @@ server.registerTool('generate_video', {
     cast_mode: z.enum(['sheet', 'frame']).default('sheet')
       .describe('Only when the prompt @mentions cast and there is no start/end image. sheet: their pictures on a reference sheet steer every frame (LTX-2.5 Ingredients, 768x448-class, 5 s minimum). frame: a hero frame of them is composed first, then animated.'),
     loras,
+    turbo: z.enum(H3_TURBO.map((t) => t.key) as [string, ...string[]]).optional()
+      .describe('H3 only: a step distill instead of full 20-step sampling, several times faster. v11-4 / v10-4 = 4 steps, v10-8 = 8 steps (closer to full quality), fasth3-6 = 6 steps. Needs its LoRA in ComfyUI: npm run models -- --only h3-turbo fetches v11-4, v10-4 and v10-8; the fasth3-6 file is in no bundle.'),
   },
   annotations: GPU,
 }, safe(async (a) => {
   const start = a.start_image ? await resolveInput(a.start_image, 'image') : undefined;
   const end = a.end_image ? await resolveInput(a.end_image, 'image') : undefined;
   const size = videoSize(a.aspect, await tierFor('video', a.resolution), start?.dims);
-  const body = videoBody({ model: a.model, prompt: a.prompt, preset: a.preset, size, seconds: a.seconds, count: a.count, audio: a.audio, startImage: start?.token, endImage: end?.token, castMode: a.cast_mode, loras: a.loras as LoraPick[] | undefined });
+  const body = videoBody({ model: a.model, prompt: a.prompt, preset: a.preset, size, seconds: a.seconds, count: a.count, audio: a.audio, startImage: start?.token, endImage: end?.token, castMode: a.cast_mode, loras: a.loras as LoraPick[] | undefined, turbo: a.turbo });
   return queue(wire(body));
 }));
 

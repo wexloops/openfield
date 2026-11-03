@@ -4,7 +4,7 @@ import { api, inputUrl, uploadFile } from '../api';
 import {
   ASPECTS, PRESETS, PRESET_CATS, VIDEO_MODELS, artFor, compilePrompt, presetById, videoFrame, type AspectId,
 } from '../catalog';
-import { secondsToFrames } from '../presets';
+import { availableH3Turbo, secondsToFrames } from '../presets';
 import { setParams, useRoute } from '../router';
 import { isImage, isModel, takeHandoff, toast, useStore, type Ref, inFeed } from '../store';
 import { useDropZone, usePageDrop } from '../drop';
@@ -37,6 +37,13 @@ export default function VideoPage() {
   const [viewing, setViewing] = useState<number | null>(null);
   const [castMode, setCastMode] = useState<'sheet' | 'frame'>('sheet');
   const [loras, setLoras] = useLoraPicks('ltx');
+  // H3 turbo: '' = full sampling. Offered only for the distills ComfyUI lists.
+  const [turbo, setTurbo] = useState('');
+  const [turbos, setTurbos] = useState<ReturnType<typeof availableH3Turbo>>([]);
+  useEffect(() => {
+    if (model.id !== 'h3') return;
+    api.models().then((m) => setTurbos(availableH3Turbo(m.checkpoints.loras ?? []))).catch(() => setTurbos([]));
+  }, [model.id]);
 
   // Take refs handed over from another page (Animate, Make a loop, ...).
   // A recipe link carries its prompt once; drop it from the URL after reading.
@@ -62,7 +69,7 @@ export default function VideoPage() {
   const castOn = castNamed.length > 0 && model.id === 'ltx25' && !start && !end;
   const sheetOn = castOn && castMode === 'sheet';
   const shown = sheetOn ? (({ width, height }) => ({ w: width, h: height }))(sheetSize(size.w, size.h)) : size;
-  const est = useEstimate({ kind: 'video', model: model.id, w: shown.w, h: shown.h, seconds: sheetOn ? Math.max(5, seconds) : seconds });
+  const est = useEstimate({ kind: 'video', model: model.id, w: shown.w, h: shown.h, seconds: sheetOn ? Math.max(5, seconds) : seconds, ...(model.id === 'h3' ? { turbo: turbo || 'none' } : {}) });
   const takes = useStore((s) => s.takes.filter((t) => inFeed(t) && !isImage(t) && !isModel(t)));
   const compiled = compilePrompt([prompt, preset.text]);
   const needsStart = model.id === 'h3' || mode === 'loop';
@@ -113,6 +120,7 @@ export default function VideoPage() {
         startImage: start?.token, endImage: end?.token, shotName: (prompt || preset.name).slice(0, 40),
       };
       if (model.id === 'h3') body.lengthFrames = secondsToFrames(seconds);
+      if (model.id === 'h3' && turbo) body.h3Turbo = turbo;
       if (model.id === 'ltx25' && loras.length) body.loras = loras;
       if (castOn && castMode === 'frame') body.castMode = 'frame';
       if (mode === 'loop' && autoFix) body.seamFix = 'auto';
@@ -206,6 +214,10 @@ export default function VideoPage() {
           <TierChip app="video" value={res} onChange={setRes} />
           <Stepper value={count} min={1} max={4} onChange={setCount} fmt={(v) => `${v}/4`} />
           {model.id === 'ltx25' && <LoraChips family="ltx" value={loras} onChange={setLoras} />}
+          {model.id === 'h3' && turbos.length > 0 && (
+            <ChipMenu icon="bolt" value={turbo} onChange={setTurbo} title="Turbo (step distill)"
+              options={[{ value: '', label: 'Full · 20 steps', note: 'No distill: the slowest, the reference quality.' }, ...turbos.map((t) => ({ value: t.key, label: t.label, note: t.note }))]} />
+          )}
         </div>
 
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>

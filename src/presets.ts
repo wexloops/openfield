@@ -51,5 +51,11 @@ export const H3_TURBO_FILES: Record<string, string> = {
   'v10-4': 'minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors',
   'v10-8': 'minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors',
 };
+/** The turbo presets whose LoRA ComfyUI lists, under exactly the name the graph asks for. */
+export const availableH3Turbo = (loras: readonly string[]) => {
+  const have = new Set(loras);
+  return H3_TURBO.filter((t) => have.has(H3_TURBO_FILES[t.key]));
+};
+
 export const H3_REF_TURBO_FILE =
   'minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors';
